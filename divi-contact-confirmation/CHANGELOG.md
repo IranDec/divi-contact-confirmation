@@ -6,6 +6,37 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.4.0] — 2026-06-18
+
+### Fixed
+- **Critical:** confirmation emails were not sent on most Divi installations because
+  Divi processes contact forms via AJAX and its internal `et_pb_contact_form_submit`
+  action hook is not reliably accessible to third-party plugins.
+
+### Added
+- **Three-layer hook detection** in `DCC_Hooks` — first successful match triggers the
+  send; a `static $sent` flag prevents duplicate emails if multiple layers fire:
+  1. **`wp_mail` filter (primary)** — intercepts Divi's admin-notification call,
+     reads the `Reply-To` header (set by Divi to the submitter's address), and
+     pulls all field values directly from `$_POST`. Works on every Divi version.
+  2. **`et_pb_contact_form_submit` action (fallback)** — Divi 4 named hook.
+  3. **`divi_contact_form_submitted` action (fallback)** — Divi 5 named hook.
+- **Diagnostics tab** (`Settings → Divi Confirmation → Diagnostics`):
+  - **Send test email** form — send a real confirmation to any address without
+    needing to submit a Divi form. Result (success / failure) shown as an
+    admin notice after redirect.
+  - **System information table** — shows plugin version, WordPress version,
+    PHP version, active theme, whether Divi is detected and its version,
+    `wp_mail()` availability, current From email, plugin enabled status,
+    log table presence, and `checkdnsrr()` availability.
+- German keyword additions to name-field detection (`vorname`, `nachname`).
+
+### Changed
+- Version bump to 1.4.0 in plugin header and `DCC_VERSION` constant.
+- `DCC_Hooks::init()` registers four hooks instead of two.
+
+---
+
 ## [1.3.0] — 2026-06-18
 
 ### Added

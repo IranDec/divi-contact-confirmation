@@ -16,7 +16,8 @@ class DCC_Settings {
 	public static function init() {
 		add_action( 'admin_menu',            array( __CLASS__, 'add_menu' ) );
 		add_action( 'admin_init',            array( __CLASS__, 'register_settings' ) );
-		add_action( 'admin_post_dcc_clear_logs', array( __CLASS__, 'handle_clear_logs' ) );
+		add_action( 'admin_post_dcc_clear_logs',  array( __CLASS__, 'handle_clear_logs' ) );
+		add_action( 'admin_post_dcc_send_test',   array( __CLASS__, 'handle_send_test' ) );
 		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'enqueue_styles' ) );
 	}
 
@@ -163,6 +164,34 @@ class DCC_Settings {
 	}
 
 	// -------------------------------------------------------------------------
+	// Test-send action
+	// -------------------------------------------------------------------------
+
+	public static function handle_send_test() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Not allowed.', 'divi-contact-confirmation' ) );
+		}
+		check_admin_referer( 'dcc_send_test' );
+
+		// phpcs:ignore WordPress.Security.NonceVerification
+		$to = sanitize_email( $_POST['dcc_test_email'] ?? get_bloginfo( 'admin_email' ) );
+
+		$result = DCC_Mailer::send(
+			$to,
+			__( 'Test User', 'divi-contact-confirmation' ),
+			array(
+				'et_pb_contact_name_0'    => __( 'Test User', 'divi-contact-confirmation' ),
+				'et_pb_contact_email_0'   => $to,
+				'et_pb_contact_message_0' => __( 'This is a test submission sent from the plugin diagnostic tool.', 'divi-contact-confirmation' ),
+			)
+		);
+
+		$status = $result ? 'ok' : 'fail';
+		wp_safe_redirect( add_query_arg( array( 'page' => self::MENU_SLUG, 'tab' => 'diagnostics', 'test' => $status ), admin_url( 'options-general.php' ) ) );
+		exit;
+	}
+
+	// -------------------------------------------------------------------------
 	// Clear-logs action
 	// -------------------------------------------------------------------------
 
@@ -218,7 +247,7 @@ class DCC_Settings {
 
 		// phpcs:ignore WordPress.Security.NonceVerification
 		$raw_tab    = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : 'settings';
-		$valid_tabs = array( 'settings', 'security', 'logs' );
+		$valid_tabs = array( 'settings', 'security', 'logs', 'diagnostics' );
 		$active_tab = in_array( $raw_tab, $valid_tabs, true ) ? $raw_tab : 'settings';
 		?>
 		<div class="wrap dcc-tabs">
@@ -227,9 +256,10 @@ class DCC_Settings {
 			<nav class="nav-tab-wrapper">
 				<?php
 				$tabs = array(
-					'settings' => __( 'Email Settings', 'divi-contact-confirmation' ),
-					'security' => __( 'Security', 'divi-contact-confirmation' ),
-					'logs'     => __( 'Logs', 'divi-contact-confirmation' ),
+					'settings'    => __( 'Email Settings', 'divi-contact-confirmation' ),
+					'security'    => __( 'Security', 'divi-contact-confirmation' ),
+					'logs'        => __( 'Logs', 'divi-contact-confirmation' ),
+					'diagnostics' => __( 'Diagnostics', 'divi-contact-confirmation' ),
 				);
 				foreach ( $tabs as $slug => $label ) {
 					printf(
@@ -248,6 +278,8 @@ class DCC_Settings {
 					self::render_settings_tab();
 				} elseif ( 'security' === $active_tab ) {
 					self::render_security_tab();
+				} elseif ( 'diagnostics' === $active_tab ) {
+					self::render_diagnostics_tab();
 				} else {
 					self::render_logs_tab();
 				}
@@ -430,6 +462,96 @@ class DCC_Settings {
 		<?php endif; ?>
 		<br>
 		<?php
+	}
+
+	// -------------------------------------------------------------------------
+	// Diagnostics tab
+	// -------------------------------------------------------------------------
+
+	private static function render_diagnostics_tab() {
+		// phpcs:ignore WordPress.Security.NonceVerification
+		$test_result = isset( $_GET['test'] ) ? sanitize_key( $_GET['test'] ) : '';
+		$admin_email = get_bloginfo( 'admin_email' );
+
+		if ( 'ok' === $test_result ) {
+			echo '<div class="notice notice-success is-dismissible"><p>'
+				. esc_html__( 'Test email sent successfully! Check your inbox.', 'divi-contact-confirmation' )
+				. '</p></div>';
+		} elseif ( 'fail' === $test_result ) {
+			echo '<div class="notice notice-error is-dismissible"><p>'
+				. esc_html__( 'Test email failed. Check the Logs tab for the error message, and verify your WordPress mail configuration.', 'divi-contact-confirmation' )
+				. '</p></div>';
+		}
+		?>
+
+		<h3><?php esc_html_e( 'Send a test email', 'divi-contact-confirmation' ); ?></h3>
+		<p><?php esc_html_e( 'Sends a confirmation email exactly as the plugin would after a real form submission. Use this to verify your email settings and SMTP connection.', 'divi-contact-confirmation' ); ?></p>
+
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="dcc_send_test">
+			<?php wp_nonce_field( 'dcc_send_test' ); ?>
+			<table class="form-table" role="presentation">
+				<tr>
+					<th scope="row">
+						<label for="dcc_test_email"><?php esc_html_e( 'Send test to', 'divi-contact-confirmation' ); ?></label>
+					</th>
+					<td>
+						<input type="email" id="dcc_test_email" name="dcc_test_email"
+						       value="<?php echo esc_attr( $admin_email ); ?>"
+						       class="regular-text" required />
+						<p class="description"><?php esc_html_e( 'Enter the address that should receive the test confirmation email.', 'divi-contact-confirmation' ); ?></p>
+					</td>
+				</tr>
+			</table>
+			<?php submit_button( __( 'Send test email', 'divi-contact-confirmation' ), 'primary', 'submit', false ); ?>
+		</form>
+
+		<hr>
+
+		<h3><?php esc_html_e( 'System information', 'divi-contact-confirmation' ); ?></h3>
+		<table class="widefat striped" style="max-width:650px">
+			<tbody>
+				<?php
+				$checks = array(
+					__( 'Plugin version', 'divi-contact-confirmation' )
+						=> DCC_VERSION,
+					__( 'WordPress version', 'divi-contact-confirmation' )
+						=> get_bloginfo( 'version' ),
+					__( 'PHP version', 'divi-contact-confirmation' )
+						=> PHP_VERSION,
+					__( 'Active theme', 'divi-contact-confirmation' )
+						=> wp_get_theme()->get( 'Name' ) . ' ' . wp_get_theme()->get( 'Version' ),
+					__( 'Divi detected', 'divi-contact-confirmation' )
+						=> ( defined( 'ET_BUILDER_VERSION' ) ? '✓  v' . ET_BUILDER_VERSION : __( '✗  Not detected (is Divi active?)', 'divi-contact-confirmation' ) ),
+					__( 'wp_mail() function exists', 'divi-contact-confirmation' )
+						=> function_exists( 'wp_mail' ) ? __( '✓  Yes', 'divi-contact-confirmation' ) : __( '✗  No', 'divi-contact-confirmation' ),
+					__( 'From email', 'divi-contact-confirmation' )
+						=> get_option( 'dcc_from_email', $admin_email ),
+					__( 'Confirmation emails enabled', 'divi-contact-confirmation' )
+						=> get_option( 'dcc_sec_enabled', '1' ) ? __( '✓  Yes', 'divi-contact-confirmation' ) : __( '✗  No (disabled in Security tab)', 'divi-contact-confirmation' ),
+					__( 'Log table exists', 'divi-contact-confirmation' )
+						=> self::log_table_exists() ? __( '✓  Yes', 'divi-contact-confirmation' ) : __( '✗  No — deactivate and re-activate the plugin', 'divi-contact-confirmation' ),
+					__( 'checkdnsrr() available', 'divi-contact-confirmation' )
+						=> function_exists( 'checkdnsrr' ) ? __( '✓  Yes', 'divi-contact-confirmation' ) : __( '✗  No (MX check will be skipped)', 'divi-contact-confirmation' ),
+				);
+				foreach ( $checks as $label => $value ) {
+					printf(
+						'<tr><th style="width:50%%">%s</th><td>%s</td></tr>',
+						esc_html( $label ),
+						esc_html( $value )
+					);
+				}
+				?>
+			</tbody>
+		</table>
+		<br>
+		<?php
+	}
+
+	private static function log_table_exists() {
+		global $wpdb;
+		$table = $wpdb->prefix . 'dcc_log';
+		return (bool) $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) ); // phpcs:ignore
 	}
 
 	// -------------------------------------------------------------------------
