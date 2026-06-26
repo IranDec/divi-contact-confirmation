@@ -1,6 +1,6 @@
 # Divi Contact Form — Confirmation Email
 
-**Version:** 1.5.2  
+**Version:** 1.5.3  
 **Author:** [Mohammad Babaei](https://adschi.com)  
 **License:** GPL-2.0-or-later  
 **Requires WordPress:** 6.0+  
@@ -92,6 +92,7 @@ Divi processes contact forms over AJAX, which makes its internal action hooks un
 | Blocked keywords | Comma-separated — suppresses send if any field contains the word |
 | Require valid MX record | DNS check before sending (may be slow on some hosts) |
 | Log blocked attempts | Write a Blocked row to the log when a send is suppressed |
+| Auto-delete blocked logs after (hours) | Blocked and failed entries older than N hours are removed automatically by WP-Cron. Sent entries are never touched. Set to 0 to disable. |
 | reCAPTCHA v3 — Site Key | Public key from [Google reCAPTCHA Admin Console](https://www.google.com/recaptcha/admin). Leave blank to disable. |
 | reCAPTCHA v3 — Secret Key | Secret key used for server-side verification. Never expose publicly. |
 | reCAPTCHA v3 — Minimum score | `0.0` = definitely a bot · `1.0` = definitely human. Recommended: `0.5`. |
@@ -105,6 +106,7 @@ When both reCAPTCHA keys are saved the plugin automatically:
 ### Logs tab
 
 - Shows all sent / failed / blocked emails, newest first, 25 per page
+- **Sender IP** column with one-click copy button — use IPs to block attackers at server/firewall level
 - Status colours: **green** = Sent, **red** = Failed, **amber** = Blocked
 - "Clear all logs" button with confirmation dialog
 

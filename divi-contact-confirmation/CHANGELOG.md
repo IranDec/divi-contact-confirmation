@@ -6,6 +6,27 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.5.3] — 2026-06-26
+
+### Added
+- **Sender IP logging** — every log entry now records the submitter's real IP address
+  (respects Cloudflare `CF-Connecting-IP`, `X-Forwarded-For`, `X-Real-IP`, and `REMOTE_ADDR`).
+  The Logs tab shows a new **Sender IP** column with a one-click copy button so IPs can be
+  pasted into `.htaccess` or a firewall to block attackers at the server level.
+- **Auto-delete blocked logs** — a new Security-tab option ("Auto-delete blocked logs after N hours",
+  default 24) automatically removes `blocked` and `failed` log entries older than the chosen
+  interval via WP-Cron (runs hourly). `sent` entries are never auto-deleted.
+- `DCC_Logger::purge_blocked( $hours )` method that deletes only blocked/failed rows older than
+  the given number of hours.
+- Deactivation hook clears the scheduled cron event cleanly.
+
+### Changed
+- DB schema version bumped to `1.1` — `dbDelta` adds the `sender_ip VARCHAR(45)` column
+  automatically on next page load (no manual re-activation required).
+- Version bump to 1.5.3.
+
+---
+
 ## [1.5.2] — 2026-06-26
 
 ### Fixed
