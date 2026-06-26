@@ -62,12 +62,12 @@ class DCC_Hooks {
 			return;
 		}
 
-		// Load Google reCAPTCHA v3
+		// Load Google reCAPTCHA v3 — jQuery must load first so our inline script can use $.ajaxPrefilter
 		wp_enqueue_script(
 			'google-recaptcha-v3',
 			'https://www.google.com/recaptcha/api.js?render=' . rawurlencode( $site_key ),
-			array(),
-			null, // version handled by Google
+			array( 'jquery' ),
+			null, // version managed by Google
 			true
 		);
 
@@ -77,7 +77,8 @@ class DCC_Hooks {
 			echo '<style>.grecaptcha-badge{visibility:hidden!important}</style>' . "\n";
 		} );
 
-		// Inline JS: inject reCAPTCHA token + DCC nonce into every Divi AJAX submit
+		// Inline JS: inject reCAPTCHA token + DCC nonce into every Divi AJAX submit.
+		// Runs after jQuery and the reCAPTCHA API script are both available.
 		$nonce  = wp_create_nonce( 'dcc_submit' );
 		$script = sprintf(
 			'(function($){
@@ -93,31 +94,46 @@ class DCC_Hooks {
 					});
 				}
 
+				/* Inject fields into a serialised query string */
+				function dccInjectString(str) {
+					return str
+						+ "&g-recaptcha-response=" + encodeURIComponent(dccToken)
+						+ "&dcc_nonce="            + encodeURIComponent(dccNonce);
+				}
+
 				$(document).ready(function() {
 					dccRefreshToken();
 					setInterval(dccRefreshToken, 90000);
 
-					/* Divi 4 uses jQuery AJAX */
+					/* Divi 4 — jQuery AJAX (data may arrive as string OR plain object) */
 					$.ajaxPrefilter(function(options) {
-						if (options.data && options.data.indexOf("action=et_pb_contact_form_submit") !== -1) {
-							options.data += "&g-recaptcha-response=" + encodeURIComponent(dccToken) + "&dcc_nonce=" + encodeURIComponent(dccNonce);
+						if (!options.data) { return; }
+
+						if (typeof options.data === "string") {
+							if (options.data.indexOf("action=et_pb_contact_form_submit") !== -1) {
+								options.data = dccInjectString(options.data);
+							}
+						} else if (typeof options.data === "object") {
+							if (options.data.action === "et_pb_contact_form_submit") {
+								options.data["g-recaptcha-response"] = dccToken;
+								options.data["dcc_nonce"]            = dccNonce;
+							}
 						}
 					});
 
-					/* Divi 5 may use Fetch API */
+					/* Divi 5 — Fetch API */
 					var _fetch = window.fetch;
 					window.fetch = function(url, opts) {
 						if (opts && opts.body) {
 							var b = opts.body;
-							var s = (b instanceof URLSearchParams) ? b.toString() : (typeof b === "string" ? b : "");
-							if (s.indexOf("action=et_pb_contact_form_submit") !== -1) {
-								if (b instanceof URLSearchParams) {
+							if (b instanceof URLSearchParams) {
+								if (b.get("action") === "et_pb_contact_form_submit") {
 									b.set("g-recaptcha-response", dccToken);
 									b.set("dcc_nonce", dccNonce);
 									opts.body = b;
-								} else {
-									opts.body += "&g-recaptcha-response=" + encodeURIComponent(dccToken) + "&dcc_nonce=" + encodeURIComponent(dccNonce);
 								}
+							} else if (typeof b === "string" && b.indexOf("action=et_pb_contact_form_submit") !== -1) {
+								opts.body = dccInjectString(b);
 							}
 						}
 						return _fetch.apply(this, arguments);
