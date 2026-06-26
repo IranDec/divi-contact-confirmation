@@ -77,14 +77,13 @@ class DCC_Hooks {
 			echo '<style>.grecaptcha-badge{visibility:hidden!important}</style>' . "\n";
 		} );
 
-		// Inline JS: inject reCAPTCHA token + DCC nonce into every Divi AJAX submit.
-		// Runs after jQuery and the reCAPTCHA API script are both available.
-		$nonce  = wp_create_nonce( 'dcc_submit' );
+		// Inline JS: inject reCAPTCHA token into every Divi AJAX submit.
+		// We use dcc_recaptcha_token (not g-recaptcha-response) to avoid overwriting
+		// Divi own reCAPTCHA token, which would break Divi validation.
 		$script = sprintf(
 			'(function($){
 				"use strict";
 				var dccSiteKey = %s;
-				var dccNonce   = %s;
 				var dccToken   = "";
 
 				function dccRefreshToken() {
@@ -94,23 +93,17 @@ class DCC_Hooks {
 					});
 				}
 
-				/* Inject our fields into a serialised query string.
-				   We use dcc_recaptcha_token (not g-recaptcha-response) so we never
-				   overwrite Divi reCAPTCHA token, which would break its validation. */
 				function dccInjectString(str) {
-					return str
-						+ "&dcc_recaptcha_token=" + encodeURIComponent(dccToken)
-						+ "&dcc_nonce="           + encodeURIComponent(dccNonce);
+					return str + "&dcc_recaptcha_token=" + encodeURIComponent(dccToken);
 				}
 
 				$(document).ready(function() {
 					dccRefreshToken();
 					setInterval(dccRefreshToken, 90000);
 
-					/* Divi 4 — jQuery AJAX (data may arrive as string OR plain object) */
+					/* Divi 4 — jQuery AJAX */
 					$.ajaxPrefilter(function(options) {
 						if (!options.data) { return; }
-
 						if (typeof options.data === "string") {
 							if (options.data.indexOf("action=et_pb_contact_form_submit") !== -1) {
 								options.data = dccInjectString(options.data);
@@ -118,7 +111,6 @@ class DCC_Hooks {
 						} else if (typeof options.data === "object") {
 							if (options.data.action === "et_pb_contact_form_submit") {
 								options.data["dcc_recaptcha_token"] = dccToken;
-								options.data["dcc_nonce"]           = dccNonce;
 							}
 						}
 					});
@@ -131,7 +123,6 @@ class DCC_Hooks {
 							if (b instanceof URLSearchParams) {
 								if (b.get("action") === "et_pb_contact_form_submit") {
 									b.set("dcc_recaptcha_token", dccToken);
-									b.set("dcc_nonce", dccNonce);
 									opts.body = b;
 								}
 							} else if (typeof b === "string" && b.indexOf("action=et_pb_contact_form_submit") !== -1) {
@@ -142,8 +133,7 @@ class DCC_Hooks {
 					};
 				});
 			}(jQuery));',
-			wp_json_encode( $site_key ),
-			wp_json_encode( $nonce )
+			wp_json_encode( $site_key )
 		);
 
 		wp_add_inline_script( 'google-recaptcha-v3', $script );
@@ -160,10 +150,6 @@ class DCC_Hooks {
 	 */
 	public static function start_ajax_intercept() {
 		if ( self::$sent ) {
-			return;
-		}
-
-		if ( ! self::nonce_ok() ) {
 			return;
 		}
 
@@ -229,10 +215,6 @@ class DCC_Hooks {
 			return $args;
 		}
 
-		if ( ! self::nonce_ok() ) {
-			return $args;
-		}
-
 		$headers = is_array( $args['headers'] )
 			? $args['headers']
 			: array_filter( array_map( 'trim', explode( "\n", $args['headers'] ) ) );
@@ -282,10 +264,6 @@ class DCC_Hooks {
 			return;
 		}
 
-		if ( ! self::nonce_ok() ) {
-			return;
-		}
-
 		// $fields here may be only email-type fields; supplement from POST
 		$all_fields = array_merge( self::fields_from_post(), is_array( $fields ) ? $fields : array() );
 		$email      = self::extract_email_from_fields( $all_fields );
@@ -306,10 +284,6 @@ class DCC_Hooks {
 			return;
 		}
 
-		if ( ! self::nonce_ok() ) {
-			return;
-		}
-
 		$fields = isset( $form_data['fields'] ) ? $form_data['fields'] : $form_data;
 		$email  = self::extract_email_from_fields( $fields );
 		$name   = self::extract_name_from_fields( $fields );
@@ -323,20 +297,6 @@ class DCC_Hooks {
 	// -------------------------------------------------------------------------
 	// Helpers
 	// -------------------------------------------------------------------------
-
-	/**
-	 * When reCAPTCHA is configured, validate the DCC nonce injected by our frontend JS.
-	 * Returns true if reCAPTCHA is disabled (no site key) or if the nonce is valid.
-	 * Drops bot requests that never loaded the page and therefore have no nonce.
-	 */
-	private static function nonce_ok() {
-		if ( ! get_option( 'dcc_sec_recaptcha_site_key', '' ) ) {
-			return true; // reCAPTCHA not configured — skip nonce gate
-		}
-		// phpcs:ignore WordPress.Security.NonceVerification
-		$nonce = isset( $_POST['dcc_nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['dcc_nonce'] ) ) : '';
-		return (bool) wp_verify_nonce( $nonce, 'dcc_submit' );
-	}
 
 	private static function is_divi_ajax_request() {
 		if ( ! ( defined( 'DOING_AJAX' ) && DOING_AJAX ) ) {

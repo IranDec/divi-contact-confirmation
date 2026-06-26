@@ -166,7 +166,7 @@ class DCC_Security {
 		$response = wp_remote_post(
 			'https://www.google.com/recaptcha/api/siteverify',
 			array(
-				'timeout' => 10,
+				'timeout' => 5,
 				'body'    => array(
 					'secret'   => $secret,
 					'response' => $token,

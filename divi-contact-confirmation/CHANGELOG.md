@@ -6,6 +6,21 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.5.1] — 2026-06-26
+
+### Fixed
+- **Critical:** confirmation emails were not being sent after 1.5.0 introduced a WordPress nonce
+  gate that blocked all four hook layers — including legitimate browser submissions — because
+  Divi does not always use jQuery AJAX, so the nonce was never injected into the request.
+  Removed the nonce gate entirely; Google reCAPTCHA v3 alone is sufficient bot protection.
+- **Critical:** reCAPTCHA JS was injecting the token as `g-recaptcha-response`, which overwrote
+  Divi own reCAPTCHA token and caused Divi to show "You must be human to submit this form."
+  The field name is now `dcc_recaptcha_token` to avoid any conflict with Divi.
+- Reduced reCAPTCHA API verification timeout from 10 s to 5 s to prevent slow form submissions.
+- Removed unused `dcc_nonce` injection from frontend JS.
+
+---
+
 ## [1.5.0] — 2026-06-26
 
 ### Added
