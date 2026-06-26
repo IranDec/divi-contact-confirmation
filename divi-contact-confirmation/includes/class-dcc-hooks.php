@@ -145,14 +145,8 @@ class DCC_Hooks {
 			return;
 		}
 
-		// When reCAPTCHA is configured, reject requests that lack a valid DCC nonce.
-		// Legitimate browsers always have one because enqueue_frontend() injects it.
-		if ( get_option( 'dcc_sec_recaptcha_site_key', '' ) ) {
-			// phpcs:ignore WordPress.Security.NonceVerification
-			$nonce = isset( $_POST['dcc_nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['dcc_nonce'] ) ) : '';
-			if ( ! wp_verify_nonce( $nonce, 'dcc_submit' ) ) {
-				return;
-			}
+		if ( ! self::nonce_ok() ) {
+			return;
 		}
 
 		// Snapshot POST data now, before Divi might alter superglobals
@@ -217,6 +211,10 @@ class DCC_Hooks {
 			return $args;
 		}
 
+		if ( ! self::nonce_ok() ) {
+			return $args;
+		}
+
 		$headers = is_array( $args['headers'] )
 			? $args['headers']
 			: array_filter( array_map( 'trim', explode( "\n", $args['headers'] ) ) );
@@ -266,6 +264,10 @@ class DCC_Hooks {
 			return;
 		}
 
+		if ( ! self::nonce_ok() ) {
+			return;
+		}
+
 		// $fields here may be only email-type fields; supplement from POST
 		$all_fields = array_merge( self::fields_from_post(), is_array( $fields ) ? $fields : array() );
 		$email      = self::extract_email_from_fields( $all_fields );
@@ -286,6 +288,10 @@ class DCC_Hooks {
 			return;
 		}
 
+		if ( ! self::nonce_ok() ) {
+			return;
+		}
+
 		$fields = isset( $form_data['fields'] ) ? $form_data['fields'] : $form_data;
 		$email  = self::extract_email_from_fields( $fields );
 		$name   = self::extract_name_from_fields( $fields );
@@ -299,6 +305,20 @@ class DCC_Hooks {
 	// -------------------------------------------------------------------------
 	// Helpers
 	// -------------------------------------------------------------------------
+
+	/**
+	 * When reCAPTCHA is configured, validate the DCC nonce injected by our frontend JS.
+	 * Returns true if reCAPTCHA is disabled (no site key) or if the nonce is valid.
+	 * Drops bot requests that never loaded the page and therefore have no nonce.
+	 */
+	private static function nonce_ok() {
+		if ( ! get_option( 'dcc_sec_recaptcha_site_key', '' ) ) {
+			return true; // reCAPTCHA not configured — skip nonce gate
+		}
+		// phpcs:ignore WordPress.Security.NonceVerification
+		$nonce = isset( $_POST['dcc_nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['dcc_nonce'] ) ) : '';
+		return (bool) wp_verify_nonce( $nonce, 'dcc_submit' );
+	}
 
 	private static function is_divi_ajax_request() {
 		if ( ! ( defined( 'DOING_AJAX' ) && DOING_AJAX ) ) {
