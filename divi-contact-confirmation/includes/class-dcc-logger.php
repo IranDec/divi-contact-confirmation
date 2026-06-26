@@ -33,15 +33,17 @@ class DCC_Logger {
 			subject         VARCHAR(500)  NOT NULL DEFAULT '',
 			status          VARCHAR(10)   NOT NULL DEFAULT 'sent',
 			error_message   TEXT          NOT NULL DEFAULT '',
+			sender_ip       VARCHAR(45)   NOT NULL DEFAULT '',
 			PRIMARY KEY (id),
 			KEY sent_at (sent_at),
-			KEY status  (status)
+			KEY status  (status),
+			KEY sender_ip (sender_ip)
 		) {$charset};";
 
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 		dbDelta( $sql );
 
-		update_option( 'dcc_db_version', '1.0' );
+		update_option( 'dcc_db_version', '1.1' );
 	}
 
 	/**
@@ -76,8 +78,9 @@ class DCC_Logger {
 				'subject'         => sanitize_text_field( $data['subject'] ?? '' ),
 				'status'          => $data['status'] ?? ( empty( $data['sent'] ) ? 'failed' : 'sent' ),
 				'error_message'   => sanitize_text_field( $data['error_message'] ?? '' ),
+				'sender_ip'       => sanitize_text_field( $data['sender_ip'] ?? self::current_ip() ),
 			),
-			array( '%s', '%s', '%s', '%s', '%s', '%s' )
+			array( '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
 		);
 	}
 
@@ -104,6 +107,38 @@ class DCC_Logger {
 		$total = (int) $wpdb->get_var( "SELECT COUNT(*) FROM `{$table}`" ); // phpcs:ignore
 
 		return array( 'rows' => $rows, 'total' => $total );
+	}
+
+	/**
+	 * Resolve the real visitor IP (same logic as DCC_Security).
+	 */
+	private static function current_ip() {
+		$headers = array( 'HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'REMOTE_ADDR' );
+		foreach ( $headers as $h ) {
+			if ( ! empty( $_SERVER[ $h ] ) ) {
+				$ip = trim( explode( ',', sanitize_text_field( wp_unslash( $_SERVER[ $h ] ) ) )[0] );
+				if ( filter_var( $ip, FILTER_VALIDATE_IP ) ) {
+					return $ip;
+				}
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * Delete blocked/failed log rows older than $hours hours.
+	 * Sent rows are never touched.
+	 */
+	public static function purge_blocked( $hours ) {
+		global $wpdb;
+		$table   = $wpdb->prefix . self::TABLE_BASE;
+		$cutoff  = gmdate( 'Y-m-d H:i:s', time() - (int) $hours * HOUR_IN_SECONDS );
+		$wpdb->query(
+			$wpdb->prepare(
+				"DELETE FROM `{$table}` WHERE status IN ('blocked','failed') AND sent_at < %s", // phpcs:ignore
+				$cutoff
+			)
+		);
 	}
 
 	/**

@@ -99,9 +99,38 @@ class DCC_Settings {
 				'type'  => 'checkbox',
 				'desc'  => __( 'Write a log entry (status = Blocked) when a submission is suppressed by a security rule.', 'divi-contact-confirmation' ),
 			),
+			array(
+				'id'    => 'dcc_log_blocked_ttl',
+				'label' => __( 'Auto-delete blocked logs after (hours)', 'divi-contact-confirmation' ),
+				'type'  => 'number',
+				'desc'  => __( 'Blocked and failed log entries older than this many hours are deleted automatically. Sent entries are never deleted. Set to 0 to disable auto-cleanup. Default: 24.', 'divi-contact-confirmation' ),
+				'attrs' => 'min="0" max="8760" style="width:80px"',
+			),
+			array(
+				'id'    => 'dcc_sec_recaptcha_site_key',
+				'label' => __( 'reCAPTCHA v3 — Site Key', 'divi-contact-confirmation' ),
+				'type'  => 'text',
+				'desc'  => __( 'Public site key from Google reCAPTCHA Admin Console. Leave blank to disable reCAPTCHA.', 'divi-contact-confirmation' ),
+			),
+			array(
+				'id'    => 'dcc_sec_recaptcha_secret_key',
+				'label' => __( 'reCAPTCHA v3 — Secret Key', 'divi-contact-confirmation' ),
+				'type'  => 'password',
+				'desc'  => __( 'Secret key used for server-side token verification. Never share this publicly.', 'divi-contact-confirmation' ),
+			),
+			array(
+				'id'    => 'dcc_sec_recaptcha_min_score',
+				'label' => __( 'reCAPTCHA v3 — Minimum score', 'divi-contact-confirmation' ),
+				'type'  => 'number',
+				'desc'  => __( 'Scores range from 0.0 (bot) to 1.0 (human). Submissions below this threshold are blocked. Recommended: 0.5.', 'divi-contact-confirmation' ),
+				'attrs' => 'min="0" max="1" step="0.1" style="width:80px"',
+			),
 		);
 
 		add_settings_section( 'dcc_sec_section', '', null, 'dcc-settings-security' );
+
+		// Also register the log TTL option under the security group
+		register_setting( 'dcc_security_options', 'dcc_log_blocked_ttl', array( 'sanitize_callback' => 'absint' ) );
 
 		foreach ( $sec_fields as $field ) {
 			register_setting(
@@ -146,6 +175,14 @@ class DCC_Settings {
 					$id,
 					esc_attr( $value ),
 					$attrs // already escaped literals
+				);
+				break;
+
+			case 'password':
+				printf(
+					'<input type="text" id="%1$s" name="%1$s" value="%2$s" class="regular-text" autocomplete="off" />',
+					$id,
+					esc_attr( $value )
 				);
 				break;
 
@@ -420,6 +457,7 @@ class DCC_Settings {
 						<th><?php esc_html_e( 'Recipient', 'divi-contact-confirmation' ); ?></th>
 						<th><?php esc_html_e( 'Subject', 'divi-contact-confirmation' ); ?></th>
 						<th><?php esc_html_e( 'Status', 'divi-contact-confirmation' ); ?></th>
+						<th><?php esc_html_e( 'Sender IP', 'divi-contact-confirmation' ); ?></th>
 						<th><?php esc_html_e( 'Note', 'divi-contact-confirmation' ); ?></th>
 					</tr>
 				</thead>
@@ -438,6 +476,14 @@ class DCC_Settings {
 							<td><?php echo esc_html( $row->subject ); ?></td>
 							<td class="dcc-status-<?php echo esc_attr( $row->status ); ?>">
 								<?php echo esc_html( $status_labels[ $row->status ] ?? $row->status ); ?>
+							</td>
+							<td style="font-family:monospace;white-space:nowrap">
+								<?php if ( ! empty( $row->sender_ip ) ) : ?>
+									<span title="<?php echo esc_attr( $row->sender_ip ); ?>"><?php echo esc_html( $row->sender_ip ); ?></span>
+									<button type="button" style="margin-left:4px;cursor:pointer;padding:1px 5px;font-size:11px"
+										onclick="navigator.clipboard.writeText('<?php echo esc_js( $row->sender_ip ); ?>').then(function(){this.textContent='✓';}.bind(this))"
+										title="<?php esc_attr_e( 'Copy IP', 'divi-contact-confirmation' ); ?>">⧉</button>
+								<?php endif; ?>
 							</td>
 							<td><?php echo esc_html( $row->error_message ); ?></td>
 						</tr>
@@ -533,6 +579,10 @@ class DCC_Settings {
 						=> self::log_table_exists() ? __( '✓  Yes', 'divi-contact-confirmation' ) : __( '✗  No — deactivate and re-activate the plugin', 'divi-contact-confirmation' ),
 					__( 'checkdnsrr() available', 'divi-contact-confirmation' )
 						=> function_exists( 'checkdnsrr' ) ? __( '✓  Yes', 'divi-contact-confirmation' ) : __( '✗  No (MX check will be skipped)', 'divi-contact-confirmation' ),
+					__( 'reCAPTCHA v3 configured', 'divi-contact-confirmation' )
+						=> ( get_option( 'dcc_sec_recaptcha_site_key', '' ) && get_option( 'dcc_sec_recaptcha_secret_key', '' ) )
+							? __( '✓  Yes', 'divi-contact-confirmation' )
+							: __( '✗  No (configure in Security tab)', 'divi-contact-confirmation' ),
 				);
 				foreach ( $checks as $label => $value ) {
 					printf(

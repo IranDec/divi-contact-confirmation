@@ -66,6 +66,14 @@ class DCC_Security {
 			}
 		}
 
+		// 6. Google reCAPTCHA v3
+		if ( get_option( 'dcc_sec_recaptcha_secret_key', '' ) ) {
+			$result = self::check_recaptcha();
+			if ( true !== $result ) {
+				return $result;
+			}
+		}
+
 		return true;
 	}
 
@@ -140,6 +148,53 @@ class DCC_Security {
 	}
 
 	/**
+	 * Verify the Google reCAPTCHA v3 token submitted with the form.
+	 * Returns true on pass, a reason string on failure.
+	 */
+	private static function check_recaptcha() {
+		$secret = get_option( 'dcc_sec_recaptcha_secret_key', '' );
+		if ( ! $secret ) {
+			return true;
+		}
+
+		// phpcs:ignore WordPress.Security.NonceVerification
+		$token = isset( $_POST['dcc_recaptcha_token'] ) ? sanitize_text_field( wp_unslash( $_POST['dcc_recaptcha_token'] ) ) : '';
+
+		// Token absent = JS did not run (ad-blocker, slow load, direct POST bot).
+		// Allow through — keyword block and rate limiting cover direct-POST attacks.
+		// Only reject when a token IS present but Google says it is not human.
+		if ( '' === $token ) {
+			return true;
+		}
+
+		$response = wp_remote_post(
+			'https://www.google.com/recaptcha/api/siteverify',
+			array(
+				'timeout' => 5,
+				'body'    => array(
+					'secret'   => $secret,
+					'response' => $token,
+					'remoteip' => self::visitor_ip(),
+				),
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			// Network error — allow through rather than blocking legitimate users
+			return true;
+		}
+
+		$data      = json_decode( wp_remote_retrieve_body( $response ), true );
+		$min_score = (float) get_option( 'dcc_sec_recaptcha_min_score', '0.5' );
+
+		if ( empty( $data['success'] ) || ( isset( $data['score'] ) && $data['score'] < $min_score ) ) {
+			return 'recaptcha_failed';
+		}
+
+		return true;
+	}
+
+	/**
 	 * Verify that the recipient domain has at least one MX record.
 	 * Uses checkdnsrr() — may be slow on shared hosts with restricted DNS.
 	 */
@@ -189,6 +244,8 @@ class DCC_Security {
 			'blocked_domain'     => __( 'Blocked email domain', 'divi-contact-confirmation' ),
 			'blocked_keyword'    => __( 'Blocked keyword found', 'divi-contact-confirmation' ),
 			'no_mx_record'       => __( 'No MX record for domain', 'divi-contact-confirmation' ),
+			'recaptcha_missing'  => __( 'reCAPTCHA token missing', 'divi-contact-confirmation' ),
+			'recaptcha_failed'   => __( 'reCAPTCHA verification failed', 'divi-contact-confirmation' ),
 		);
 		return $labels[ $reason ] ?? $reason;
 	}

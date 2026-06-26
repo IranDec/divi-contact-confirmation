@@ -35,6 +35,9 @@ class DCC_Hooks {
 	private static $captured_fields = array();
 
 	public static function init() {
+		// Inject reCAPTCHA v3 script + nonce into frontend pages
+		add_action( 'wp_enqueue_scripts', array( __CLASS__, 'enqueue_frontend' ) );
+
 		// Layer 1 — AJAX output-buffer intercept (Divi 4 & 5, logged-in or not)
 		add_action( 'wp_ajax_nopriv_et_pb_contact_form_submit', array( __CLASS__, 'start_ajax_intercept' ), 1 );
 		add_action( 'wp_ajax_et_pb_contact_form_submit',        array( __CLASS__, 'start_ajax_intercept' ), 1 );
@@ -47,6 +50,73 @@ class DCC_Hooks {
 
 		// Layer 4 — Divi 5 named action
 		add_action( 'divi_contact_form_submitted', array( __CLASS__, 'handle_divi5' ), 10, 2 );
+	}
+
+	// -------------------------------------------------------------------------
+	// Frontend: inject reCAPTCHA script + nonce
+	// -------------------------------------------------------------------------
+
+	public static function enqueue_frontend() {
+		$site_key = get_option( 'dcc_sec_recaptcha_site_key', '' );
+		if ( ! $site_key ) {
+			return;
+		}
+
+		// Priority 1 in wp_head: patch XHR BEFORE any other script (including Divi)
+		// so Divi cannot cache a reference to the original send() method.
+		// dccToken lives in global scope so the footer script can write to it.
+		add_action( 'wp_head', function() {
+			echo '<style>.grecaptcha-badge{visibility:hidden!important}</style>' . "\n";
+			echo '<script>window.dccToken="";(function(){var _o=XMLHttpRequest.prototype.open,_s=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.open=function(m,u){this._dccU=typeof u==="string"?u:"";return _o.apply(this,arguments);};XMLHttpRequest.prototype.send=function(b){if(this._dccU.indexOf("admin-ajax.php")!==-1){if(typeof b==="string"&&b.indexOf("action=et_pb_contact_form_submit")!==-1){b+="&dcc_recaptcha_token="+encodeURIComponent(window.dccToken);}else if(b instanceof FormData&&b.get&&b.get("action")==="et_pb_contact_form_submit"){b.append("dcc_recaptcha_token",window.dccToken);}}return _s.call(this,b);};}());</script>' . "\n";
+		}, 1 );
+
+		// Load reCAPTCHA v3 in footer — sets window.dccToken once library is ready
+		wp_enqueue_script(
+			'google-recaptcha-v3',
+			'https://www.google.com/recaptcha/api.js?render=' . rawurlencode( $site_key ),
+			array(),
+			null,
+			true
+		);
+
+		// Token is fetched immediately when this script runs (footer, right after reCAPTCHA loads).
+		// A real user takes several seconds to fill the form, so the token is always ready.
+		// Bots that POST directly without loading the page have no token and are blocked server-side.
+		$script = sprintf(
+			'(function(){
+				var k = %s;
+				var _f = window.fetch;
+
+				function refreshToken() {
+					if (typeof grecaptcha === "undefined") { return; }
+					grecaptcha.ready(function() {
+						grecaptcha.execute(k, {action:"divi_contact_form"})
+							.then(function(t){ window.dccToken = t; })
+							.catch(function(){});
+					});
+				}
+
+				/* Fetch token immediately — no waiting for DOM ready */
+				refreshToken();
+				setInterval(refreshToken, 90000);
+
+				/* Fetch API intercept for Divi 5 */
+				window.fetch = function(url, opts) {
+					if (opts && opts.body) {
+						var b = opts.body;
+						if (b instanceof URLSearchParams && b.get("action") === "et_pb_contact_form_submit") {
+							b.set("dcc_recaptcha_token", window.dccToken); opts.body = b;
+						} else if (typeof b === "string" && b.indexOf("action=et_pb_contact_form_submit") !== -1) {
+							opts.body = b + "&dcc_recaptcha_token=" + encodeURIComponent(window.dccToken);
+						}
+					}
+					return _f.apply(this, arguments);
+				};
+			}());',
+			wp_json_encode( $site_key )
+		);
+
+		wp_add_inline_script( 'google-recaptcha-v3', $script );
 	}
 
 	// -------------------------------------------------------------------------

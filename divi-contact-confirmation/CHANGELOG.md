@@ -6,6 +6,84 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.5.3] — 2026-06-26
+
+### Added
+- **Sender IP logging** — every log entry now records the submitter's real IP address
+  (respects Cloudflare `CF-Connecting-IP`, `X-Forwarded-For`, `X-Real-IP`, and `REMOTE_ADDR`).
+  The Logs tab shows a new **Sender IP** column with a one-click copy button so IPs can be
+  pasted into `.htaccess` or a firewall to block attackers at the server level.
+- **Auto-delete blocked logs** — a new Security-tab option ("Auto-delete blocked logs after N hours",
+  default 24) automatically removes `blocked` and `failed` log entries older than the chosen
+  interval via WP-Cron (runs hourly). `sent` entries are never auto-deleted.
+- `DCC_Logger::purge_blocked( $hours )` method that deletes only blocked/failed rows older than
+  the given number of hours.
+- Deactivation hook clears the scheduled cron event cleanly.
+
+### Changed
+- DB schema version bumped to `1.1` — `dbDelta` adds the `sender_ip VARCHAR(45)` column
+  automatically on next page load (no manual re-activation required).
+- Version bump to 1.5.3.
+
+---
+
+## [1.5.2] — 2026-06-26
+
+### Fixed
+- **Legitimate users blocked with "reCAPTCHA token missing"** — the reCAPTCHA token is
+  generated asynchronously; if a user submitted the form before the Promise resolved,
+  `dccToken` was still empty and their submission was rejected.
+  Fix: intercept the Divi submit button click via a capturing `addEventListener`. If the
+  token is not yet ready, the click is cancelled, a fresh token is fetched, and the button
+  is re-clicked automatically — the user sees no delay.
+- Moved XHR prototype patch to `wp_head` at priority 1 (was in footer) so it runs before
+  Divi scripts load and cannot be bypassed by early script caching of XHR references.
+- Replaced background `setInterval` token refresh with a `Promise`-based `getToken()`
+  helper reused by both the pre-warm call and the submit-button intercept.
+
+---
+
+## [1.5.1] — 2026-06-26
+
+### Fixed
+- **Critical:** confirmation emails were not being sent after 1.5.0 introduced a WordPress nonce
+  gate that blocked all four hook layers — including legitimate browser submissions — because
+  Divi does not always use jQuery AJAX, so the nonce was never injected into the request.
+  Removed the nonce gate entirely; Google reCAPTCHA v3 alone is sufficient bot protection.
+- **Critical:** reCAPTCHA JS was injecting the token as `g-recaptcha-response`, which overwrote
+  Divi own reCAPTCHA token and caused Divi to show "You must be human to submit this form."
+  The field name is now `dcc_recaptcha_token` to avoid any conflict with Divi.
+- Reduced reCAPTCHA API verification timeout from 10 s to 5 s to prevent slow form submissions.
+- Removed unused `dcc_nonce` injection from frontend JS.
+
+---
+
+## [1.5.0] — 2026-06-26
+
+### Added
+- **Google reCAPTCHA v3** — optional bot protection. When a Site Key and Secret Key are saved
+  in the Security tab the plugin automatically:
+  - Injects the reCAPTCHA v3 script on every frontend page
+  - Intercepts Divi 4 (jQuery AJAX) and Divi 5 (Fetch API) form submissions to attach the
+    reCAPTCHA token before the request is sent
+  - Verifies the token server-side via `https://www.google.com/recaptcha/api/siteverify`
+  - Blocks submissions whose score falls below the configurable **Minimum score** threshold
+    (default 0.5; range 0.0 – 1.0)
+  - Network errors during verification are silently allowed through so a Google outage never
+    blocks real users
+- **WordPress nonce guard** — when reCAPTCHA is configured, a one-time `dcc_submit` nonce is
+  injected alongside the reCAPTCHA token. Requests that arrive without this nonce (direct AJAX
+  calls from bots that never loaded the page) are dropped before any processing occurs.
+- New Security-tab settings: reCAPTCHA Site Key, reCAPTCHA Secret Key, Minimum score
+- New Diagnostics row: **reCAPTCHA v3 configured** — shows whether both keys are saved
+- New blocked-reason labels: `recaptcha_missing`, `recaptcha_failed`
+- reCAPTCHA options added to the uninstall cleanup list
+
+### Changed
+- Version bump to 1.5.0
+
+---
+
 ## [1.4.0] — 2026-06-18
 
 ### Fixed
