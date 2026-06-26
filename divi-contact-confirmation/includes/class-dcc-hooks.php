@@ -96,7 +96,7 @@ class DCC_Hooks {
 
 				/* Inject our fields into a serialised query string.
 				   We use dcc_recaptcha_token (not g-recaptcha-response) so we never
-				   overwrite Divi's own reCAPTCHA token, which would break its validation. */
+				   overwrite Divi reCAPTCHA token, which would break its validation. */
 				function dccInjectString(str) {
 					return str
 						+ "&dcc_recaptcha_token=" + encodeURIComponent(dccToken)
