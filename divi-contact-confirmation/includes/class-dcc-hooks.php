@@ -62,96 +62,49 @@ class DCC_Hooks {
 			return;
 		}
 
-		// Load Google reCAPTCHA v3 — jQuery must load first so our inline script can use $.ajaxPrefilter
+		// Priority 1 in wp_head: patch XHR BEFORE any other script (including Divi)
+		// so Divi cannot cache a reference to the original send() method.
+		// dccToken lives in global scope so the footer script can write to it.
+		add_action( 'wp_head', function() {
+			echo '<style>.grecaptcha-badge{visibility:hidden!important}</style>' . "\n";
+			echo '<script>window.dccToken="";(function(){var _o=XMLHttpRequest.prototype.open,_s=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.open=function(m,u){this._dccU=typeof u==="string"?u:"";return _o.apply(this,arguments);};XMLHttpRequest.prototype.send=function(b){if(this._dccU.indexOf("admin-ajax.php")!==-1&&typeof b==="string"&&b.indexOf("action=et_pb_contact_form_submit")!==-1){b+="&dcc_recaptcha_token="+encodeURIComponent(window.dccToken);}return _s.call(this,b);};}());</script>' . "\n";
+		}, 1 );
+
+		// Load reCAPTCHA v3 in footer — sets window.dccToken once library is ready
 		wp_enqueue_script(
 			'google-recaptcha-v3',
 			'https://www.google.com/recaptcha/api.js?render=' . rawurlencode( $site_key ),
-			array( 'jquery' ),
-			null, // version managed by Google
+			array(),
+			null,
 			true
 		);
 
-		// Hide the reCAPTCHA v3 floating badge (invisible mode).
-		// Per Google policy, you must disclose reCAPTCHA usage in your Privacy Policy.
-		add_action( 'wp_head', function() {
-			echo '<style>.grecaptcha-badge{visibility:hidden!important}</style>' . "\n";
-		} );
-
-		// Inline JS: inject reCAPTCHA token into every Divi AJAX submit.
-		// We use dcc_recaptcha_token (not g-recaptcha-response) to avoid overwriting
-		// Divi own reCAPTCHA token, which would break Divi validation.
 		$script = sprintf(
-			'(function($){
-				"use strict";
-				var dccSiteKey = %s;
-				var dccToken   = "";
-
-				function dccRefreshToken() {
+			'(function(){
+				var k = %s;
+				function refresh() {
 					if (typeof grecaptcha === "undefined") { return; }
 					grecaptcha.ready(function() {
-						grecaptcha.execute(dccSiteKey, {action:"divi_contact_form"}).then(function(t){ dccToken = t; });
+						grecaptcha.execute(k, {action:"divi_contact_form"}).then(function(t){ window.dccToken = t; });
 					});
 				}
+				refresh();
+				setInterval(refresh, 90000);
 
-				function dccInjectString(str) {
-					return str + "&dcc_recaptcha_token=" + encodeURIComponent(dccToken);
-				}
-
-				/* XMLHttpRequest intercept — Divi 4 uses XHR directly, not jQuery AJAX */
-				(function() {
-					var _open = XMLHttpRequest.prototype.open;
-					var _send = XMLHttpRequest.prototype.send;
-
-					XMLHttpRequest.prototype.open = function(method, url) {
-						this._dccUrl = (typeof url === "string") ? url : "";
-						return _open.apply(this, arguments);
-					};
-
-					XMLHttpRequest.prototype.send = function(body) {
-						if (this._dccUrl.indexOf("admin-ajax.php") !== -1
-							&& typeof body === "string"
-							&& body.indexOf("action=et_pb_contact_form_submit") !== -1) {
-							body = dccInjectString(body);
+				/* Fetch API intercept for Divi 5 */
+				var _f = window.fetch;
+				window.fetch = function(url, opts) {
+					if (opts && opts.body) {
+						var b = opts.body;
+						if (b instanceof URLSearchParams && b.get("action") === "et_pb_contact_form_submit") {
+							b.set("dcc_recaptcha_token", window.dccToken); opts.body = b;
+						} else if (typeof b === "string" && b.indexOf("action=et_pb_contact_form_submit") !== -1) {
+							opts.body = b + "&dcc_recaptcha_token=" + encodeURIComponent(window.dccToken);
 						}
-						return _send.call(this, body);
-					};
-				}());
-
-				$(document).ready(function() {
-					dccRefreshToken();
-					setInterval(dccRefreshToken, 90000);
-
-					/* Divi 4 — jQuery AJAX (fallback if jQuery wraps XHR) */
-					$.ajaxPrefilter(function(options) {
-						if (!options.data) { return; }
-						if (typeof options.data === "string"
-							&& options.data.indexOf("action=et_pb_contact_form_submit") !== -1) {
-							options.data = dccInjectString(options.data);
-						} else if (typeof options.data === "object"
-							&& options.data.action === "et_pb_contact_form_submit") {
-							options.data["dcc_recaptcha_token"] = dccToken;
-						}
-					});
-
-					/* Divi 5 — Fetch API */
-					var _fetch = window.fetch;
-					window.fetch = function(url, opts) {
-						if (opts && opts.body) {
-							var b = opts.body;
-							if (b instanceof URLSearchParams) {
-								if (b.get("action") === "et_pb_contact_form_submit") {
-									b.set("dcc_recaptcha_token", dccToken);
-									opts.body = b;
-								}
-							} else if (typeof b === "string"
-								&& b.indexOf("action=et_pb_contact_form_submit") !== -1) {
-								opts.body = dccInjectString(b);
-							}
-						}
-						return _fetch.apply(this, arguments);
-					};
-				});
-			}(jQuery));',
+					}
+					return _f.apply(this, arguments);
+				};
+			}());',
 			wp_json_encode( $site_key )
 		);
 
