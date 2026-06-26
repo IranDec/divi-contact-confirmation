@@ -1,6 +1,6 @@
 # Divi Contact Form — Confirmation Email
 
-**Version:** 1.4.1  
+**Version:** 1.5.0  
 **Author:** [Mohammad Babaei](https://adschi.com)  
 **License:** GPL-2.0-or-later  
 **Requires WordPress:** 6.0+  
@@ -18,9 +18,10 @@ Automatically sends a confirmation email to visitors after they submit any Divi 
 
 ## Features
 
-- Works with **Divi 4** and **Divi 5** out of the box via three-layer hook detection
+- Works with **Divi 4** and **Divi 5** out of the box via four-layer hook detection
 - Fully customisable email **subject** and **body** with dynamic placeholders
-- **Security tab** — rate limiting, domain blocking, keyword filtering, MX record check
+- **Google reCAPTCHA v3** — invisible bot protection with configurable score threshold
+- **Security tab** — rate limiting, domain blocking, keyword filtering, MX record check, reCAPTCHA
 - **Logs tab** — every sent / failed / blocked email with status and error details
 - **Diagnostics tab** — send a test email and inspect system info without touching any form
 - Translations included: **English**, **Persian (fa_IR)**, **German (de_DE)**
@@ -91,6 +92,15 @@ Divi processes contact forms over AJAX, which makes its internal action hooks un
 | Blocked keywords | Comma-separated — suppresses send if any field contains the word |
 | Require valid MX record | DNS check before sending (may be slow on some hosts) |
 | Log blocked attempts | Write a Blocked row to the log when a send is suppressed |
+| reCAPTCHA v3 — Site Key | Public key from [Google reCAPTCHA Admin Console](https://www.google.com/recaptcha/admin). Leave blank to disable. |
+| reCAPTCHA v3 — Secret Key | Secret key used for server-side verification. Never expose publicly. |
+| reCAPTCHA v3 — Minimum score | `0.0` = definitely a bot · `1.0` = definitely human. Recommended: `0.5`. |
+
+When both reCAPTCHA keys are saved the plugin automatically:
+1. Loads the invisible reCAPTCHA v3 script on every frontend page
+2. Attaches the token + a WordPress nonce to every Divi form AJAX submission (Divi 4 & 5)
+3. Verifies the token server-side; blocks submissions below the minimum score
+4. Rejects direct AJAX calls from bots that never loaded the page (nonce guard)
 
 ### Logs tab
 

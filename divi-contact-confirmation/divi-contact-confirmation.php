@@ -3,7 +3,7 @@
  * Plugin Name: Divi Contact Form Confirmation Email
  * Plugin URI:  https://adschi.com
  * Description: Sends an automatic confirmation email to users after they submit a Divi contact form. Compatible with Divi 4, Divi 5, and the latest WordPress.
- * Version:     1.4.1
+ * Version:     1.5.0
  * Author:      Mohammad Babaei
  * Author URI:  https://adschi.com
  * License:     GPL-2.0-or-later
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'DCC_VERSION', '1.4.1' );
+define( 'DCC_VERSION', '1.5.0' );
 define( 'DCC_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DCC_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
@@ -46,12 +46,16 @@ function dcc_activate() {
 		'from_name'  => get_bloginfo( 'name' ),
 		'from_email' => get_bloginfo( 'admin_email' ),
 		// Security settings
-		'sec_enabled'         => '1',
-		'sec_rate_limit'      => '5',
-		'sec_blocked_domains' => '',
-		'sec_blocked_keywords'=> '',
-		'sec_check_mx'        => '0',
-		'sec_log_blocked'     => '1',
+		'sec_enabled'              => '1',
+		'sec_rate_limit'           => '5',
+		'sec_blocked_domains'      => '',
+		'sec_blocked_keywords'     => '',
+		'sec_check_mx'             => '0',
+		'sec_log_blocked'          => '1',
+		// reCAPTCHA v3
+		'sec_recaptcha_site_key'   => '',
+		'sec_recaptcha_secret_key' => '',
+		'sec_recaptcha_min_score'  => '0.5',
 	);
 
 	foreach ( $defaults as $key => $value ) {
@@ -68,6 +72,7 @@ function dcc_uninstall() {
 		'subject', 'body', 'from_name', 'from_email', 'db_version',
 		'sec_enabled', 'sec_rate_limit', 'sec_blocked_domains',
 		'sec_blocked_keywords', 'sec_check_mx', 'sec_log_blocked',
+		'sec_recaptcha_site_key', 'sec_recaptcha_secret_key', 'sec_recaptcha_min_score',
 	);
 	foreach ( $options as $key ) {
 		delete_option( 'dcc_' . $key );

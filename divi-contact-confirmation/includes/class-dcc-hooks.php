@@ -35,6 +35,9 @@ class DCC_Hooks {
 	private static $captured_fields = array();
 
 	public static function init() {
+		// Inject reCAPTCHA v3 script + nonce into frontend pages
+		add_action( 'wp_enqueue_scripts', array( __CLASS__, 'enqueue_frontend' ) );
+
 		// Layer 1 — AJAX output-buffer intercept (Divi 4 & 5, logged-in or not)
 		add_action( 'wp_ajax_nopriv_et_pb_contact_form_submit', array( __CLASS__, 'start_ajax_intercept' ), 1 );
 		add_action( 'wp_ajax_et_pb_contact_form_submit',        array( __CLASS__, 'start_ajax_intercept' ), 1 );
@@ -50,6 +53,85 @@ class DCC_Hooks {
 	}
 
 	// -------------------------------------------------------------------------
+	// Frontend: inject reCAPTCHA script + nonce
+	// -------------------------------------------------------------------------
+
+	public static function enqueue_frontend() {
+		$site_key = get_option( 'dcc_sec_recaptcha_site_key', '' );
+		if ( ! $site_key ) {
+			return;
+		}
+
+		// Load Google reCAPTCHA v3
+		wp_enqueue_script(
+			'google-recaptcha-v3',
+			'https://www.google.com/recaptcha/api.js?render=' . rawurlencode( $site_key ),
+			array(),
+			null, // version handled by Google
+			true
+		);
+
+		// Hide the reCAPTCHA v3 floating badge (invisible mode).
+		// Per Google policy, you must disclose reCAPTCHA usage in your Privacy Policy.
+		add_action( 'wp_head', function() {
+			echo '<style>.grecaptcha-badge{visibility:hidden!important}</style>' . "\n";
+		} );
+
+		// Inline JS: inject reCAPTCHA token + DCC nonce into every Divi AJAX submit
+		$nonce  = wp_create_nonce( 'dcc_submit' );
+		$script = sprintf(
+			'(function($){
+				"use strict";
+				var dccSiteKey = %s;
+				var dccNonce   = %s;
+				var dccToken   = "";
+
+				function dccRefreshToken() {
+					if (typeof grecaptcha === "undefined") { return; }
+					grecaptcha.ready(function() {
+						grecaptcha.execute(dccSiteKey, {action:"divi_contact_form"}).then(function(t){ dccToken = t; });
+					});
+				}
+
+				$(document).ready(function() {
+					dccRefreshToken();
+					setInterval(dccRefreshToken, 90000);
+
+					/* Divi 4 uses jQuery AJAX */
+					$.ajaxPrefilter(function(options) {
+						if (options.data && options.data.indexOf("action=et_pb_contact_form_submit") !== -1) {
+							options.data += "&g-recaptcha-response=" + encodeURIComponent(dccToken) + "&dcc_nonce=" + encodeURIComponent(dccNonce);
+						}
+					});
+
+					/* Divi 5 may use Fetch API */
+					var _fetch = window.fetch;
+					window.fetch = function(url, opts) {
+						if (opts && opts.body) {
+							var b = opts.body;
+							var s = (b instanceof URLSearchParams) ? b.toString() : (typeof b === "string" ? b : "");
+							if (s.indexOf("action=et_pb_contact_form_submit") !== -1) {
+								if (b instanceof URLSearchParams) {
+									b.set("g-recaptcha-response", dccToken);
+									b.set("dcc_nonce", dccNonce);
+									opts.body = b;
+								} else {
+									opts.body += "&g-recaptcha-response=" + encodeURIComponent(dccToken) + "&dcc_nonce=" + encodeURIComponent(dccNonce);
+								}
+							}
+						}
+						return _fetch.apply(this, arguments);
+					};
+				});
+			}(jQuery));',
+			wp_json_encode( $site_key ),
+			wp_json_encode( $nonce )
+		);
+
+		wp_add_inline_script( 'google-recaptcha-v3', $script );
+	}
+
+	// -------------------------------------------------------------------------
 	// Layer 1: AJAX output-buffer intercept
 	// -------------------------------------------------------------------------
 
@@ -61,6 +143,16 @@ class DCC_Hooks {
 	public static function start_ajax_intercept() {
 		if ( self::$sent ) {
 			return;
+		}
+
+		// When reCAPTCHA is configured, reject requests that lack a valid DCC nonce.
+		// Legitimate browsers always have one because enqueue_frontend() injects it.
+		if ( get_option( 'dcc_sec_recaptcha_site_key', '' ) ) {
+			// phpcs:ignore WordPress.Security.NonceVerification
+			$nonce = isset( $_POST['dcc_nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['dcc_nonce'] ) ) : '';
+			if ( ! wp_verify_nonce( $nonce, 'dcc_submit' ) ) {
+				return;
+			}
 		}
 
 		// Snapshot POST data now, before Divi might alter superglobals

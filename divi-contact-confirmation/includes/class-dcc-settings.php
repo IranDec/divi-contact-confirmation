@@ -99,6 +99,25 @@ class DCC_Settings {
 				'type'  => 'checkbox',
 				'desc'  => __( 'Write a log entry (status = Blocked) when a submission is suppressed by a security rule.', 'divi-contact-confirmation' ),
 			),
+			array(
+				'id'    => 'dcc_sec_recaptcha_site_key',
+				'label' => __( 'reCAPTCHA v3 — Site Key', 'divi-contact-confirmation' ),
+				'type'  => 'text',
+				'desc'  => __( 'Public site key from Google reCAPTCHA Admin Console. Leave blank to disable reCAPTCHA.', 'divi-contact-confirmation' ),
+			),
+			array(
+				'id'    => 'dcc_sec_recaptcha_secret_key',
+				'label' => __( 'reCAPTCHA v3 — Secret Key', 'divi-contact-confirmation' ),
+				'type'  => 'password',
+				'desc'  => __( 'Secret key used for server-side token verification. Never share this publicly.', 'divi-contact-confirmation' ),
+			),
+			array(
+				'id'    => 'dcc_sec_recaptcha_min_score',
+				'label' => __( 'reCAPTCHA v3 — Minimum score', 'divi-contact-confirmation' ),
+				'type'  => 'number',
+				'desc'  => __( 'Scores range from 0.0 (bot) to 1.0 (human). Submissions below this threshold are blocked. Recommended: 0.5.', 'divi-contact-confirmation' ),
+				'attrs' => 'min="0" max="1" step="0.1" style="width:80px"',
+			),
 		);
 
 		add_settings_section( 'dcc_sec_section', '', null, 'dcc-settings-security' );
@@ -146,6 +165,14 @@ class DCC_Settings {
 					$id,
 					esc_attr( $value ),
 					$attrs // already escaped literals
+				);
+				break;
+
+			case 'password':
+				printf(
+					'<input type="text" id="%1$s" name="%1$s" value="%2$s" class="regular-text" autocomplete="off" />',
+					$id,
+					esc_attr( $value )
 				);
 				break;
 
@@ -533,6 +560,10 @@ class DCC_Settings {
 						=> self::log_table_exists() ? __( '✓  Yes', 'divi-contact-confirmation' ) : __( '✗  No — deactivate and re-activate the plugin', 'divi-contact-confirmation' ),
 					__( 'checkdnsrr() available', 'divi-contact-confirmation' )
 						=> function_exists( 'checkdnsrr' ) ? __( '✓  Yes', 'divi-contact-confirmation' ) : __( '✗  No (MX check will be skipped)', 'divi-contact-confirmation' ),
+					__( 'reCAPTCHA v3 configured', 'divi-contact-confirmation' )
+						=> ( get_option( 'dcc_sec_recaptcha_site_key', '' ) && get_option( 'dcc_sec_recaptcha_secret_key', '' ) )
+							? __( '✓  Yes', 'divi-contact-confirmation' )
+							: __( '✗  No (configure in Security tab)', 'divi-contact-confirmation' ),
 				);
 				foreach ( $checks as $label => $value ) {
 					printf(

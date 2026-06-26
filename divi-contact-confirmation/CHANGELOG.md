@@ -6,6 +6,32 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.5.0] — 2026-06-26
+
+### Added
+- **Google reCAPTCHA v3** — optional bot protection. When a Site Key and Secret Key are saved
+  in the Security tab the plugin automatically:
+  - Injects the reCAPTCHA v3 script on every frontend page
+  - Intercepts Divi 4 (jQuery AJAX) and Divi 5 (Fetch API) form submissions to attach the
+    reCAPTCHA token before the request is sent
+  - Verifies the token server-side via `https://www.google.com/recaptcha/api/siteverify`
+  - Blocks submissions whose score falls below the configurable **Minimum score** threshold
+    (default 0.5; range 0.0 – 1.0)
+  - Network errors during verification are silently allowed through so a Google outage never
+    blocks real users
+- **WordPress nonce guard** — when reCAPTCHA is configured, a one-time `dcc_submit` nonce is
+  injected alongside the reCAPTCHA token. Requests that arrive without this nonce (direct AJAX
+  calls from bots that never loaded the page) are dropped before any processing occurs.
+- New Security-tab settings: reCAPTCHA Site Key, reCAPTCHA Secret Key, Minimum score
+- New Diagnostics row: **reCAPTCHA v3 configured** — shows whether both keys are saved
+- New blocked-reason labels: `recaptcha_missing`, `recaptcha_failed`
+- reCAPTCHA options added to the uninstall cleanup list
+
+### Changed
+- Version bump to 1.5.0
+
+---
+
 ## [1.4.0] — 2026-06-18
 
 ### Fixed
