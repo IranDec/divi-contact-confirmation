@@ -1,13 +1,15 @@
 <?php
 /**
- * Security checks applied before sending a confirmation email.
+ * Decides whether a confirmation email may be sent.
  *
- * Checks run in order — the first failure short-circuits the rest:
- *   1. Master enable toggle
- *   2. Per-IP rate limit (transient-based, no extra DB table needed)
- *   3. Blocked email domains
- *   4. Blocked keywords in any submitted field
- *   5. MX record validation (optional, requires DNS access)
+ * 2.0.0: built against the abuse seen in June 2026 (bots from ~80 IPs put
+ * "Join TRONYX >>> https://..." into the name field and victims' addresses into the email field):
+ *  - links / spam markers in any field, tagged addresses (victim+yoursite@...), own domain;
+ *  - one confirmation per address per 24 h (gmail dots and +tags count as the same address);
+ *  - total limits per hour and per day - when reached, confirmations pause and the admin is warned
+ *    once a day (an IP limit alone does not help against botnets).
+ * The 1.x reCAPTCHA (which let missing tokens through) was removed - use Divi's own spam
+ * protection in the contact form module; Divi rejects the form before this plugin runs.
  *
  * @author  Mohammad Babaei <https://adschi.com>
  */
@@ -18,103 +20,136 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class DCC_Security {
 
+	const OPT_SENT  = 'dcc_sent_times';
+	const OPT_ALERT = 'dcc_alert_day';
+
 	/**
-	 * Run all enabled security checks.
-	 *
-	 * @param string $email   Recipient email
-	 * @param array  $fields  All submitted form fields
-	 * @return true|string    true = OK, string = reason it was blocked
+	 * @return true|string true = allowed, otherwise a reason code (see reason_label())
 	 */
-	public static function check( $email, $fields ) {
-		// 1. Master switch
+	public static function check( $email, $fields, $bypass_limits = false ) {
 		if ( ! get_option( 'dcc_sec_enabled', '1' ) ) {
 			return 'plugin_disabled';
 		}
+		$email = strtolower( trim( (string) $email ) );
+		if ( '' === $email || ! is_email( $email ) ) {
+			return 'invalid_email';
+		}
 
-		// 2. Rate limit
-		$rate_limit = (int) get_option( 'dcc_sec_rate_limit', 5 );
-		if ( $rate_limit > 0 ) {
-			$result = self::check_rate_limit( $rate_limit );
-			if ( true !== $result ) {
-				return $result;
+		list( $local, $domain ) = explode( '@', $email, 2 );
+		$site = preg_replace( '/^www\./', '', strtolower( (string) wp_parse_url( home_url(), PHP_URL_HOST ) ) );
+		if ( $site && ( $domain === $site || substr( $domain, -strlen( '.' . $site ) ) === '.' . $site ) ) {
+			return 'own_domain';
+		}
+		$site_word = preg_replace( '/[^a-z0-9]/', '', strtok( $site, '.' ) );
+		$tag       = false !== strpos( $local, '+' ) ? preg_replace( '/[^a-z0-9]/', '', substr( $local, strpos( $local, '+' ) + 1 ) ) : '';
+		if ( '' !== $tag && strlen( $site_word ) >= 4 && false !== strpos( $tag, $site_word ) ) {
+			return 'tagged_address';
+		}
+
+		foreach ( (array) $fields as $key => $value ) {
+			$value = (string) $value;
+			if ( preg_match( '~https?://|www\.|>>>|\[url|<a\s|\b[a-z0-9-]{2,}\.(?:cc|ru|cn|xyz|top|icu|click|link|shop|online|site|live|bond|sbs|cfd|tk|gq|ml)\b~i', $value ) ) {
+				return 'link_in_form';
+			}
+			if ( false !== strpos( strtolower( (string) $key ), 'name' ) && ( strlen( $value ) > 80 || false !== strpos( $value, '@' ) ) ) {
+				return 'suspicious_name';
 			}
 		}
 
-		// 3. Blocked domains
 		$blocked_domains = get_option( 'dcc_sec_blocked_domains', '' );
-		if ( $blocked_domains ) {
-			$result = self::check_blocked_domain( $email, $blocked_domains );
-			if ( true !== $result ) {
-				return $result;
-			}
+		if ( $blocked_domains && true !== ( $r = self::check_blocked_domain( $domain, $blocked_domains ) ) ) {
+			return $r;
 		}
-
-		// 4. Blocked keywords
 		$blocked_keywords = get_option( 'dcc_sec_blocked_keywords', '' );
-		if ( $blocked_keywords ) {
-			$result = self::check_blocked_keywords( $fields, $blocked_keywords );
-			if ( true !== $result ) {
-				return $result;
+		if ( $blocked_keywords && true !== ( $r = self::check_blocked_keywords( $fields, $blocked_keywords ) ) ) {
+			return $r;
+		}
+		if ( get_option( 'dcc_sec_check_mx', '0' ) && function_exists( 'checkdnsrr' ) && ! checkdnsrr( $domain, 'MX' ) ) {
+			return 'no_mx_record';
+		}
+
+		if ( $bypass_limits ) {
+			return true;
+		}
+
+		if ( get_transient( 'dcc_addr_' . self::address_key( $email ) ) ) {
+			return 'address_limit';
+		}
+
+		$ip_limit = (int) get_option( 'dcc_sec_rate_limit', 3 );
+		if ( $ip_limit > 0 ) {
+			$key   = 'dcc_rl_' . md5( self::visitor_ip() );
+			$count = (int) get_transient( $key );
+			if ( $count >= $ip_limit ) {
+				return 'rate_limit_exceeded';
 			}
-		}
-
-		// 5. MX record check
-		if ( get_option( 'dcc_sec_check_mx', '0' ) ) {
-			$result = self::check_mx( $email );
-			if ( true !== $result ) {
-				return $result;
-			}
-		}
-
-		// 6. Google reCAPTCHA v3
-		if ( get_option( 'dcc_sec_recaptcha_secret_key', '' ) ) {
-			$result = self::check_recaptcha();
-			if ( true !== $result ) {
-				return $result;
-			}
-		}
-
-		return true;
-	}
-
-	// -------------------------------------------------------------------------
-	// Individual checks
-	// -------------------------------------------------------------------------
-
-	/**
-	 * Transient-based rate limit keyed on visitor IP.
-	 * Increments a counter; blocks when it exceeds $limit within one hour.
-	 */
-	private static function check_rate_limit( $limit ) {
-		$ip  = self::visitor_ip();
-		$key = 'dcc_rl_' . md5( $ip );
-
-		$count = (int) get_transient( $key );
-		if ( $count >= $limit ) {
-			return 'rate_limit_exceeded';
-		}
-
-		// Increment — set expiry only on the first hit so the window is a
-		// rolling hour from the first submission, not reset on every hit.
-		if ( 0 === $count ) {
-			set_transient( $key, 1, HOUR_IN_SECONDS );
-		} else {
 			set_transient( $key, $count + 1, HOUR_IN_SECONDS );
 		}
 
+		$per_hour = (int) get_option( 'dcc_sec_limit_hour', 10 );
+		$per_day  = (int) get_option( 'dcc_sec_limit_day', 40 );
+		$times    = self::recent_sends();
+		$hour     = count( array_filter( $times, function ( $t ) {
+			return $t > time() - HOUR_IN_SECONDS;
+		} ) );
+		if ( ( $per_hour > 0 && $hour >= $per_hour ) || ( $per_day > 0 && count( $times ) >= $per_day ) ) {
+			self::alert_admin( $per_hour, $per_day );
+
+			return 'total_limit';
+		}
+
 		return true;
 	}
 
-	/**
-	 * Check whether the recipient's domain is on the blocked list.
-	 */
-	private static function check_blocked_domain( $email, $blocked_domains_raw ) {
-		$domain   = strtolower( substr( strrchr( $email, '@' ), 1 ) );
-		$blocked  = array_filter( array_map( 'trim', explode( ',', strtolower( $blocked_domains_raw ) ) ) );
+	/** Called after a confirmation was sent. */
+	public static function record_sent( $email ) {
+		set_transient( 'dcc_addr_' . self::address_key( $email ), 1, DAY_IN_SECONDS );
+		$times   = self::recent_sends();
+		$times[] = time();
+		update_option( self::OPT_SENT, array_slice( $times, -500 ), false );
+	}
 
+	/** gmail ignores dots and "+tags": they count as one address. */
+	private static function address_key( $email ) {
+		list( $local, $domain ) = explode( '@', strtolower( trim( $email ) ), 2 );
+		$local = preg_replace( '/\+.*$/', '', $local );
+		if ( in_array( $domain, array( 'gmail.com', 'googlemail.com' ), true ) ) {
+			$local  = str_replace( '.', '', $local );
+			$domain = 'gmail.com';
+		}
+
+		return md5( $local . '@' . $domain );
+	}
+
+	private static function recent_sends() {
+		$times = get_option( self::OPT_SENT, array() );
+
+		return array_values( array_filter( is_array( $times ) ? $times : array(), function ( $t ) {
+			return (int) $t > time() - DAY_IN_SECONDS;
+		} ) );
+	}
+
+	private static function alert_admin( $per_hour, $per_day ) {
+		if ( get_option( self::OPT_ALERT ) === gmdate( 'Y-m-d' ) ) {
+			return;
+		}
+		update_option( self::OPT_ALERT, gmdate( 'Y-m-d' ), false );
+		wp_mail(
+			get_option( 'admin_email' ),
+			sprintf( '[%s] %s', wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ), __( 'Contact form confirmations paused', 'divi-contact-confirmation' ) ),
+			sprintf(
+				/* translators: 1: limit per hour, 2: limit per day */
+				__( "Unusually many contact forms were submitted, so confirmation emails to visitors are paused (limit: %1\$d per hour / %2\$d per day).\n\nThe form messages themselves still reach you as usual. Details: Settings > Contact Confirmation > Logs.", 'divi-contact-confirmation' ),
+				$per_hour,
+				$per_day
+			)
+		);
+	}
+
+	private static function check_blocked_domain( $domain, $blocked_domains_raw ) {
+		$blocked = array_filter( array_map( 'trim', explode( ',', strtolower( $blocked_domains_raw ) ) ) );
 		foreach ( $blocked as $blocked_domain ) {
-			// Match exact domain or any subdomain
-			if ( $domain === $blocked_domain || str_ends_with( $domain, '.' . $blocked_domain ) ) {
+			if ( $domain === $blocked_domain || substr( $domain, -strlen( '.' . $blocked_domain ) ) === '.' . $blocked_domain ) {
 				return 'blocked_domain';
 			}
 		}
@@ -122,23 +157,12 @@ class DCC_Security {
 		return true;
 	}
 
-	/**
-	 * Check all field values for blocked keywords (case-insensitive).
-	 */
 	private static function check_blocked_keywords( $fields, $blocked_keywords_raw ) {
 		$keywords = array_filter( array_map( 'trim', explode( ',', strtolower( $blocked_keywords_raw ) ) ) );
-
-		if ( ! is_array( $fields ) || empty( $keywords ) ) {
-			return true;
-		}
-
-		foreach ( $fields as $value ) {
-			if ( ! is_string( $value ) ) {
-				continue;
-			}
-			$value_lower = strtolower( $value );
-			foreach ( $keywords as $kw ) {
-				if ( '' !== $kw && false !== strpos( $value_lower, $kw ) ) {
+		foreach ( (array) $fields as $value ) {
+			$value = strtolower( (string) $value );
+			foreach ( $keywords as $keyword ) {
+				if ( '' !== $keyword && false !== strpos( $value, $keyword ) ) {
 					return 'blocked_keyword';
 				}
 			}
@@ -148,105 +172,39 @@ class DCC_Security {
 	}
 
 	/**
-	 * Verify the Google reCAPTCHA v3 token submitted with the form.
-	 * Returns true on pass, a reason string on failure.
-	 */
-	private static function check_recaptcha() {
-		$secret = get_option( 'dcc_sec_recaptcha_secret_key', '' );
-		if ( ! $secret ) {
-			return true;
-		}
-
-		// phpcs:ignore WordPress.Security.NonceVerification
-		$token = isset( $_POST['dcc_recaptcha_token'] ) ? sanitize_text_field( wp_unslash( $_POST['dcc_recaptcha_token'] ) ) : '';
-
-		// Token absent = JS did not run (ad-blocker, slow load, direct POST bot).
-		// Allow through — keyword block and rate limiting cover direct-POST attacks.
-		// Only reject when a token IS present but Google says it is not human.
-		if ( '' === $token ) {
-			return true;
-		}
-
-		$response = wp_remote_post(
-			'https://www.google.com/recaptcha/api/siteverify',
-			array(
-				'timeout' => 5,
-				'body'    => array(
-					'secret'   => $secret,
-					'response' => $token,
-					'remoteip' => self::visitor_ip(),
-				),
-			)
-		);
-
-		if ( is_wp_error( $response ) ) {
-			// Network error — allow through rather than blocking legitimate users
-			return true;
-		}
-
-		$data      = json_decode( wp_remote_retrieve_body( $response ), true );
-		$min_score = (float) get_option( 'dcc_sec_recaptcha_min_score', '0.5' );
-
-		if ( empty( $data['success'] ) || ( isset( $data['score'] ) && $data['score'] < $min_score ) ) {
-			return 'recaptcha_failed';
-		}
-
-		return true;
-	}
-
-	/**
-	 * Verify that the recipient domain has at least one MX record.
-	 * Uses checkdnsrr() — may be slow on shared hosts with restricted DNS.
-	 */
-	private static function check_mx( $email ) {
-		$domain = substr( strrchr( $email, '@' ), 1 );
-
-		if ( ! function_exists( 'checkdnsrr' ) ) {
-			return true; // Can't check — let it through
-		}
-
-		if ( ! checkdnsrr( $domain, 'MX' ) ) {
-			return 'no_mx_record';
-		}
-
-		return true;
-	}
-
-	// -------------------------------------------------------------------------
-	// Helpers
-	// -------------------------------------------------------------------------
-
-	/**
-	 * Get the visitor's real IP, respecting common proxy headers.
-	 * Falls back to REMOTE_ADDR.
+	 * The visitor's IP. Proxy headers are only trusted for Cloudflare (CF-Connecting-IP);
+	 * X-Forwarded-For can be set by anyone and made the 1.x IP limit easy to bypass.
 	 */
 	private static function visitor_ip() {
-		$headers = array( 'HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'REMOTE_ADDR' );
-		foreach ( $headers as $header ) {
+		foreach ( array( 'HTTP_CF_CONNECTING_IP', 'REMOTE_ADDR' ) as $header ) {
 			if ( ! empty( $_SERVER[ $header ] ) ) {
-				// X-Forwarded-For can be a comma-list; take the first entry
-				$ip = trim( explode( ',', sanitize_text_field( wp_unslash( $_SERVER[ $header ] ) ) )[0] );
+				$ip = trim( sanitize_text_field( wp_unslash( $_SERVER[ $header ] ) ) );
 				if ( filter_var( $ip, FILTER_VALIDATE_IP ) ) {
 					return $ip;
 				}
 			}
 		}
+
 		return '0.0.0.0';
 	}
 
-	/**
-	 * Human-readable label for a block reason code.
-	 */
+	/** Human-readable label for a block reason code. */
 	public static function reason_label( $reason ) {
 		$labels = array(
-			'plugin_disabled'    => __( 'Plugin disabled', 'divi-contact-confirmation' ),
-			'rate_limit_exceeded'=> __( 'Rate limit exceeded', 'divi-contact-confirmation' ),
-			'blocked_domain'     => __( 'Blocked email domain', 'divi-contact-confirmation' ),
-			'blocked_keyword'    => __( 'Blocked keyword found', 'divi-contact-confirmation' ),
-			'no_mx_record'       => __( 'No MX record for domain', 'divi-contact-confirmation' ),
-			'recaptcha_missing'  => __( 'reCAPTCHA token missing', 'divi-contact-confirmation' ),
-			'recaptcha_failed'   => __( 'reCAPTCHA verification failed', 'divi-contact-confirmation' ),
+			'plugin_disabled'     => __( 'Plugin disabled', 'divi-contact-confirmation' ),
+			'invalid_email'       => __( 'No valid email address', 'divi-contact-confirmation' ),
+			'own_domain'          => __( 'Address of this site', 'divi-contact-confirmation' ),
+			'tagged_address'      => __( 'Spam: address tagged with the site name', 'divi-contact-confirmation' ),
+			'link_in_form'        => __( 'Spam: link or spam text in the form', 'divi-contact-confirmation' ),
+			'suspicious_name'     => __( 'Spam: suspicious name', 'divi-contact-confirmation' ),
+			'address_limit'       => __( 'Address already confirmed in the last 24 hours', 'divi-contact-confirmation' ),
+			'rate_limit_exceeded' => __( 'Rate limit exceeded', 'divi-contact-confirmation' ),
+			'total_limit'         => __( 'Total limit reached - confirmations paused', 'divi-contact-confirmation' ),
+			'blocked_domain'      => __( 'Blocked email domain', 'divi-contact-confirmation' ),
+			'blocked_keyword'     => __( 'Blocked keyword found', 'divi-contact-confirmation' ),
+			'no_mx_record'        => __( 'No MX record for domain', 'divi-contact-confirmation' ),
 		);
-		return $labels[ $reason ] ?? $reason;
+
+		return isset( $labels[ $reason ] ) ? $labels[ $reason ] : $reason;
 	}
 }

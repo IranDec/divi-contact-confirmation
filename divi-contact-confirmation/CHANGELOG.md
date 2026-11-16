@@ -6,6 +6,39 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.0.0] — 2026-11-16
+
+### Security (breaking)
+- **The confirmation email no longer contains anything the visitor typed.** `{name}`, `{email}` and
+  form-field placeholders are no longer replaced; saved subjects / bodies are cleaned automatically on
+  update (`Hello {name},` → `Hello,`). In 1.x bots entered victims' addresses and put scam text and links
+  (e.g. `Join TRONYX >>> https://…`) into the name field, so the site mailed their scam.
+- Confirmation only after Divi accepted the form: the Divi 4 hook now reads its arguments in the right
+  order (`$processed_fields_values, $et_contact_error, $contact_form_info`) - 1.x checked the wrong
+  argument and did not recognise rejected forms.
+- Removed the output-buffer and `wp_mail()` interception layers (they reacted to requests Divi had not
+  accepted).
+- Removed the plugin's own reCAPTCHA, which let submissions without a token through. Use Divi's
+  built-in spam protection and captcha in the contact form module.
+- The IP limit trusts only `CF-Connecting-IP` and `REMOTE_ADDR` (`X-Forwarded-For` can be faked).
+
+### Added
+- Spam checks (always on): links / spam markers in any field, suspicious name, address tagged with the
+  site name (`victim+yoursite@…`), own domain.
+- One confirmation per address per 24 hours (gmail dots and `+tags` count as one address).
+- Total limits per hour (default 10) and per day (default 40); when reached, confirmations pause and the
+  admin gets one warning per day.
+- `Auto-Submitted: auto-replied` and `X-Auto-Response-Suppress` headers.
+- Security advisory in the README; explanation on the settings page.
+
+### Changed
+- Default per-IP limit 5 → 3; logs no longer store the visitor's name.
+- Filters `dcc_confirmation_subject/body/headers` and `dcc_should_send` receive the recipient only
+  (no form fields).
+- The admin test email ignores the limits.
+
+---
+
 ## [1.5.3] — 2026-06-26
 
 ### Added

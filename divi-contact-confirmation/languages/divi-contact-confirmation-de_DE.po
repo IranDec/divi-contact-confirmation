@@ -31,8 +31,8 @@ msgstr "Sendet nach dem Absenden eines Divi-Kontaktformulars automatisch eine Be
 msgid "We received your message!"
 msgstr "Wir haben Ihre Nachricht erhalten!"
 
-msgid "Hello {name},\n\nThank you for contacting us. We have received your message and will get back to you as soon as possible.\n\nBest regards,\n{site_name}"
-msgstr "Hallo {name},\n\nvielen Dank für Ihre Nachricht. Wir haben Ihre Anfrage erhalten und werden uns so schnell wie möglich bei Ihnen melden.\n\nMit freundlichen Grüßen,\n{site_name}"
+msgid "Hello,\n\nThank you for contacting us. We have received your message and will get back to you as soon as possible.\n\nBest regards,\n{site_name}"
+msgstr "Guten Tag,\n\nvielen Dank für Ihre Nachricht. Wir haben Ihre Anfrage erhalten und werden uns so schnell wie möglich bei Ihnen melden.\n\nMit freundlichen Grüßen,\n{site_name}"
 
 # ── Admin menu ───────────────────────────────────────────────────────────────
 
@@ -215,3 +215,56 @@ msgstr "Nicht erlaubt."
 #. translators: 1: plugin version number, 2: HTML link to author website
 msgid "Version %1$s &mdash; Developed by %2$s"
 msgstr "Version %1$s &mdash; Entwickelt von %2$s"
+
+# ── 2.0.0 ─────────────────────────────────────────────────────────────────────
+
+msgid "Placeholders: {site_name}, {site_url}, {date}, {time}. For security the email never contains text the visitor typed - other placeholders are removed."
+msgstr "Platzhalter: {site_name}, {site_url}, {date}, {time}. Aus Sicherheitsgründen enthält die E-Mail nie vom Besucher eingegebenen Text - andere Platzhalter werden entfernt."
+
+msgid "Total limit per hour"
+msgstr "Gesamtlimit pro Stunde"
+
+msgid "Maximum confirmation emails per hour in total (all visitors). When reached, confirmations pause and the admin is warned once a day. Each address gets at most one confirmation per 24 hours anyway."
+msgstr "Maximale Anzahl Bestätigungs-E-Mails pro Stunde insgesamt (alle Besucher). Danach werden Bestätigungen pausiert und der Admin einmal täglich gewarnt. Jede Adresse erhält ohnehin höchstens eine Bestätigung pro 24 Stunden."
+
+msgid "Total limit per day"
+msgstr "Gesamtlimit pro Tag"
+
+msgid "Maximum confirmation emails per 24 hours in total."
+msgstr "Maximale Anzahl Bestätigungs-E-Mails pro 24 Stunden insgesamt."
+
+msgid "Why no {name} or form fields? Bots enter a victim's address and put scam text or links into the name / message field. If the confirmation repeated that text, your site would send their scam. Since 2.0.0 the confirmation is always the same neutral text."
+msgstr "Warum kein {name} und keine Formularfelder? Bots geben die Adresse eines Opfers ein und schreiben Betrugstext oder Links in das Namens- oder Nachrichtenfeld. Würde die Bestätigung diesen Text wiederholen, verschickte Ihre Website deren Betrug. Seit 2.0.0 ist die Bestätigung immer derselbe neutrale Text."
+
+msgid "Bot protection"
+msgstr "Bot-Schutz"
+
+msgid "Divi contact form: enable \"Spam Protection\" (reCAPTCHA) and the captcha in the module"
+msgstr "Divi-Kontaktformular: im Modul den „Spamschutz“ (reCAPTCHA) und das Captcha aktivieren"
+
+msgid "Contact form confirmations paused"
+msgstr "Kontaktformular-Bestätigungen pausiert"
+
+msgid "Unusually many contact forms were submitted, so confirmation emails to visitors are paused (limit: %1$d per hour / %2$d per day).\n\nThe form messages themselves still reach you as usual. Details: Settings > Contact Confirmation > Logs."
+msgstr "Es wurden ungewöhnlich viele Kontaktformulare abgeschickt, daher sind Bestätigungs-E-Mails an Besucher pausiert (Limit: %1$d pro Stunde / %2$d pro Tag).\n\nDie Formularnachrichten selbst erreichen Sie weiterhin wie gewohnt. Details: Einstellungen > Contact Confirmation > Logs."
+
+msgid "No valid email address"
+msgstr "Keine gültige E-Mail-Adresse"
+
+msgid "Address of this site"
+msgstr "Adresse dieser Website"
+
+msgid "Spam: address tagged with the site name"
+msgstr "Spam: Adresse mit dem Website-Namen markiert"
+
+msgid "Spam: link or spam text in the form"
+msgstr "Spam: Link oder Spamtext im Formular"
+
+msgid "Spam: suspicious name"
+msgstr "Spam: verdächtiger Name"
+
+msgid "Address already confirmed in the last 24 hours"
+msgstr "Adresse wurde in den letzten 24 Stunden bereits bestätigt"
+
+msgid "Total limit reached - confirmations paused"
+msgstr "Gesamtlimit erreicht - Bestätigungen pausiert"

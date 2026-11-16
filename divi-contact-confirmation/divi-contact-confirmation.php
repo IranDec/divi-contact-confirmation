@@ -3,7 +3,7 @@
  * Plugin Name: Divi Contact Form Confirmation Email
  * Plugin URI:  https://adschi.com
  * Description: Sends an automatic confirmation email to users after they submit a Divi contact form. Compatible with Divi 4, Divi 5, and the latest WordPress.
- * Version:     1.5.3
+ * Version:     2.0.0
  * Author:      Mohammad Babaei
  * Author URI:  https://adschi.com
  * License:     GPL-2.0-or-later
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'DCC_VERSION', '1.5.3' );
+define( 'DCC_VERSION', '2.0.0' );
 define( 'DCC_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DCC_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
@@ -35,6 +35,10 @@ function dcc_init() {
 	// Run DB upgrades when version changes (e.g. new columns added)
 	if ( get_option( 'dcc_db_version' ) !== '1.1' ) {
 		DCC_Logger::create_table();
+	}
+
+	if ( get_option( 'dcc_version' ) !== DCC_VERSION ) {
+		dcc_upgrade();
 	}
 
 	// Ensure cron is scheduled (covers upgrades without re-activation)
@@ -62,20 +66,18 @@ function dcc_activate() {
 	$defaults = array(
 		// Email settings
 		'subject'    => __( 'We received your message!', 'divi-contact-confirmation' ),
-		'body'       => __( "Hello {name},\n\nThank you for contacting us. We have received your message and will get back to you as soon as possible.\n\nBest regards,\n{site_name}", 'divi-contact-confirmation' ),
+		'body'       => __( "Hello,\n\nThank you for contacting us. We have received your message and will get back to you as soon as possible.\n\nBest regards,\n{site_name}", 'divi-contact-confirmation' ),
 		'from_name'  => get_bloginfo( 'name' ),
 		'from_email' => get_bloginfo( 'admin_email' ),
 		// Security settings
 		'sec_enabled'              => '1',
-		'sec_rate_limit'           => '5',
+		'sec_rate_limit'           => '3',
+		'sec_limit_hour'           => '10',
+		'sec_limit_day'            => '40',
 		'sec_blocked_domains'      => '',
 		'sec_blocked_keywords'     => '',
 		'sec_check_mx'             => '0',
 		'sec_log_blocked'          => '1',
-		// reCAPTCHA v3
-		'sec_recaptcha_site_key'   => '',
-		'sec_recaptcha_secret_key' => '',
-		'sec_recaptcha_min_score'  => '0.5',
 		// Log auto-cleanup
 		'log_blocked_ttl'          => '24',
 	);
@@ -93,6 +95,31 @@ function dcc_activate() {
 }
 register_activation_hook( __FILE__, 'dcc_activate' );
 
+/**
+ * 2.0.0 upgrade: removes visitor placeholders ({name}, {email}, form fields) from the saved
+ * subject and body, adds the new limit options and deletes the old reCAPTCHA options.
+ */
+function dcc_upgrade() {
+	foreach ( array( 'dcc_subject', 'dcc_body' ) as $option ) {
+		$value = get_option( $option, false );
+		if ( false !== $value ) {
+			$clean = DCC_Mailer::clean_template( $value );
+			if ( $clean !== $value ) {
+				update_option( $option, $clean );
+			}
+		}
+	}
+	foreach ( array( 'sec_limit_hour' => '10', 'sec_limit_day' => '40' ) as $key => $value ) {
+		if ( false === get_option( 'dcc_' . $key ) ) {
+			add_option( 'dcc_' . $key, $value );
+		}
+	}
+	foreach ( array( 'sec_recaptcha_site_key', 'sec_recaptcha_secret_key', 'sec_recaptcha_min_score' ) as $key ) {
+		delete_option( 'dcc_' . $key );
+	}
+	update_option( 'dcc_version', DCC_VERSION );
+}
+
 function dcc_deactivate() {
 	wp_clear_scheduled_hook( 'dcc_purge_blocked_logs' );
 }
@@ -101,11 +128,11 @@ register_deactivation_hook( __FILE__, 'dcc_deactivate' );
 function dcc_uninstall() {
 	DCC_Logger::drop_table();
 	$options = array(
-		'subject', 'body', 'from_name', 'from_email', 'db_version',
-		'sec_enabled', 'sec_rate_limit', 'sec_blocked_domains',
+		'subject', 'body', 'from_name', 'from_email', 'db_version', 'version',
+		'sec_enabled', 'sec_rate_limit', 'sec_limit_hour', 'sec_limit_day', 'sec_blocked_domains',
 		'sec_blocked_keywords', 'sec_check_mx', 'sec_log_blocked',
 		'sec_recaptcha_site_key', 'sec_recaptcha_secret_key', 'sec_recaptcha_min_score',
-		'log_blocked_ttl',
+		'log_blocked_ttl', 'sent_times', 'alert_day',
 	);
 	foreach ( $options as $key ) {
 		delete_option( 'dcc_' . $key );

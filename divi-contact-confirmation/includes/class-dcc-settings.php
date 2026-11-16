@@ -47,7 +47,7 @@ class DCC_Settings {
 				'id'    => 'dcc_body',
 				'label' => __( 'Email Body', 'divi-contact-confirmation' ),
 				'type'  => 'textarea',
-				'desc'  => __( 'Placeholders: {name}, {email}, {site_name}, {site_url}, {date}, {time} — and any form field ID wrapped in braces.', 'divi-contact-confirmation' ),
+				'desc'  => __( 'Placeholders: {site_name}, {site_url}, {date}, {time}. For security the email never contains text the visitor typed - other placeholders are removed.', 'divi-contact-confirmation' ),
 			),
 			array( 'id' => 'dcc_from_name',  'label' => __( 'From Name', 'divi-contact-confirmation' ),          'type' => 'text' ),
 			array( 'id' => 'dcc_from_email', 'label' => __( 'From Email Address', 'divi-contact-confirmation' ),  'type' => 'email' ),
@@ -74,6 +74,20 @@ class DCC_Settings {
 				'type'  => 'number',
 				'desc'  => __( 'Maximum confirmation emails sent to the same IP address per hour. Set to 0 to disable.', 'divi-contact-confirmation' ),
 				'attrs' => 'min="0" max="999" style="width:80px"',
+			),
+			array(
+				'id'    => 'dcc_sec_limit_hour',
+				'label' => __( 'Total limit per hour', 'divi-contact-confirmation' ),
+				'type'  => 'number',
+				'desc'  => __( 'Maximum confirmation emails per hour in total (all visitors). When reached, confirmations pause and the admin is warned once a day. Each address gets at most one confirmation per 24 hours anyway.', 'divi-contact-confirmation' ),
+				'attrs' => 'min="1" max="999" style="width:80px"',
+			),
+			array(
+				'id'    => 'dcc_sec_limit_day',
+				'label' => __( 'Total limit per day', 'divi-contact-confirmation' ),
+				'type'  => 'number',
+				'desc'  => __( 'Maximum confirmation emails per 24 hours in total.', 'divi-contact-confirmation' ),
+				'attrs' => 'min="1" max="9999" style="width:80px"',
 			),
 			array(
 				'id'    => 'dcc_sec_blocked_domains',
@@ -105,25 +119,6 @@ class DCC_Settings {
 				'type'  => 'number',
 				'desc'  => __( 'Blocked and failed log entries older than this many hours are deleted automatically. Sent entries are never deleted. Set to 0 to disable auto-cleanup. Default: 24.', 'divi-contact-confirmation' ),
 				'attrs' => 'min="0" max="8760" style="width:80px"',
-			),
-			array(
-				'id'    => 'dcc_sec_recaptcha_site_key',
-				'label' => __( 'reCAPTCHA v3 — Site Key', 'divi-contact-confirmation' ),
-				'type'  => 'text',
-				'desc'  => __( 'Public site key from Google reCAPTCHA Admin Console. Leave blank to disable reCAPTCHA.', 'divi-contact-confirmation' ),
-			),
-			array(
-				'id'    => 'dcc_sec_recaptcha_secret_key',
-				'label' => __( 'reCAPTCHA v3 — Secret Key', 'divi-contact-confirmation' ),
-				'type'  => 'password',
-				'desc'  => __( 'Secret key used for server-side token verification. Never share this publicly.', 'divi-contact-confirmation' ),
-			),
-			array(
-				'id'    => 'dcc_sec_recaptcha_min_score',
-				'label' => __( 'reCAPTCHA v3 — Minimum score', 'divi-contact-confirmation' ),
-				'type'  => 'number',
-				'desc'  => __( 'Scores range from 0.0 (bot) to 1.0 (human). Submissions below this threshold are blocked. Recommended: 0.5.', 'divi-contact-confirmation' ),
-				'attrs' => 'min="0" max="1" step="0.1" style="width:80px"',
 			),
 		);
 
@@ -213,15 +208,8 @@ class DCC_Settings {
 		// phpcs:ignore WordPress.Security.NonceVerification
 		$to = sanitize_email( $_POST['dcc_test_email'] ?? get_bloginfo( 'admin_email' ) );
 
-		$result = DCC_Mailer::send(
-			$to,
-			__( 'Test User', 'divi-contact-confirmation' ),
-			array(
-				'et_pb_contact_name_0'    => __( 'Test User', 'divi-contact-confirmation' ),
-				'et_pb_contact_email_0'   => $to,
-				'et_pb_contact_message_0' => __( 'This is a test submission sent from the plugin diagnostic tool.', 'divi-contact-confirmation' ),
-			)
-		);
+		// Limits do not apply to the admin test (the content checks do).
+		$result = DCC_Mailer::send( $to, array(), true );
 
 		$status = $result ? 'ok' : 'fail';
 		wp_safe_redirect( add_query_arg( array( 'page' => self::MENU_SLUG, 'tab' => 'diagnostics', 'test' => $status ), admin_url( 'options-general.php' ) ) );
@@ -362,13 +350,10 @@ class DCC_Settings {
 			<tbody>
 				<?php
 				$ph = array(
-					'{name}'      => __( "Submitter's name (falls back to email)", 'divi-contact-confirmation' ),
-					'{email}'     => __( "Submitter's email address", 'divi-contact-confirmation' ),
 					'{site_name}' => __( 'Your site name', 'divi-contact-confirmation' ),
 					'{site_url}'  => __( 'Your site URL', 'divi-contact-confirmation' ),
 					'{date}'      => __( 'Submission date', 'divi-contact-confirmation' ),
 					'{time}'      => __( 'Submission time', 'divi-contact-confirmation' ),
-					'{field_id}'  => __( 'Any Divi form field — wrap its ID in braces', 'divi-contact-confirmation' ),
 				);
 				foreach ( $ph as $key => $desc ) {
 					printf(
@@ -380,6 +365,9 @@ class DCC_Settings {
 				?>
 			</tbody>
 		</table>
+		<p class="description" style="max-width:600px">
+			<?php esc_html_e( 'Why no {name} or form fields? Bots enter a victim\'s address and put scam text or links into the name / message field. If the confirmation repeated that text, your site would send their scam. Since 2.0.0 the confirmation is always the same neutral text.', 'divi-contact-confirmation' ); ?>
+		</p>
 		<br>
 		<?php
 	}
@@ -579,10 +567,8 @@ class DCC_Settings {
 						=> self::log_table_exists() ? __( '✓  Yes', 'divi-contact-confirmation' ) : __( '✗  No — deactivate and re-activate the plugin', 'divi-contact-confirmation' ),
 					__( 'checkdnsrr() available', 'divi-contact-confirmation' )
 						=> function_exists( 'checkdnsrr' ) ? __( '✓  Yes', 'divi-contact-confirmation' ) : __( '✗  No (MX check will be skipped)', 'divi-contact-confirmation' ),
-					__( 'reCAPTCHA v3 configured', 'divi-contact-confirmation' )
-						=> ( get_option( 'dcc_sec_recaptcha_site_key', '' ) && get_option( 'dcc_sec_recaptcha_secret_key', '' ) )
-							? __( '✓  Yes', 'divi-contact-confirmation' )
-							: __( '✗  No (configure in Security tab)', 'divi-contact-confirmation' ),
+					__( 'Bot protection', 'divi-contact-confirmation' )
+						=> __( 'Divi contact form: enable "Spam Protection" (reCAPTCHA) and the captcha in the module', 'divi-contact-confirmation' ),
 				);
 				foreach ( $checks as $label => $value ) {
 					printf(

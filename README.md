@@ -1,61 +1,65 @@
 # Divi Contact Form — Confirmation Email
 
-**Version:** 1.5.3  
+**Version:** 2.0.0  
 **Author:** [Mohammad Babaei](https://adschi.com)  
 **License:** GPL-2.0-or-later  
 **Requires WordPress:** 6.0+  
-**Tested up to:** 6.7  
 **Requires PHP:** 7.4+  
 **Compatible with:** Divi 4, Divi 5
 
 ---
 
-## Description
-
-Automatically sends a confirmation email to visitors after they submit any Divi contact form on your site. No changes to your Divi modules are required — just install, activate, and configure the email template.
+> ## ⚠️ Security advisory — update to 2.0.0
+>
+> **Versions 1.0 – 1.5.3 can be abused to send spam / scam emails from your site.**
+> The confirmation email repeated what the visitor typed (`{name}`, `{email}`, any `{field}`) and
+> was sent to whatever address was entered. Bots used this in June 2026: they entered victims'
+> addresses and put text such as `Join TRONYX >>> https://…` into the name field, so the site sent
+> the scam with its own (SPF/DKIM-valid) reputation. The 1.x reCAPTCHA did not stop it (a missing
+> token was let through) and the IP limit was useless against ~80 different IPs.
+>
+> **2.0.0 fixes this by design:** the confirmation never contains anything the visitor typed, and
+> new limits and spam checks apply. Existing templates are cleaned automatically on update
+> (`Hello {name},` becomes `Hello,`).
 
 ---
 
+## Description
+
+Automatically sends a confirmation email ("we received your message") to visitors after they
+submit a Divi contact form. No changes to your Divi modules are required.
+
 ## Features
 
-- Works with **Divi 4** and **Divi 5** out of the box via four-layer hook detection
-- Fully customisable email **subject** and **body** with dynamic placeholders
-- **Google reCAPTCHA v3** — invisible bot protection with configurable score threshold
-- **Security tab** — rate limiting, domain blocking, keyword filtering, MX record check, reCAPTCHA
-- **Logs tab** — every sent / failed / blocked email with status and error details
-- **Diagnostics tab** — send a test email and inspect system info without touching any form
-- Translations included: **English**, **Persian (fa_IR)**, **German (de_DE)**
-- Cleans up all data (DB table + options) on uninstall
+- Works with **Divi 4** (`et_pb_contact_form_submit`) and **Divi 5** (`divi_contact_form_submitted`) —
+  only after Divi accepted the form (nonce, captcha, spam protection)
+- Customisable **subject** and **body** with safe placeholders only (`{site_name}`, `{site_url}`, `{date}`, `{time}`)
+- **Abuse protection:**
+  - nothing the visitor typed is ever put into the email
+  - no confirmation when a field contains links or spam markers (`http`, `www.`, `>>>`, …), when the name is
+    suspicious, when the address is tagged with your site name (`victim+yoursite@…`) or belongs to your own domain
+  - **one confirmation per address per 24 h** (gmail dots and `+tags` count as the same address)
+  - per-IP limit, plus **total limits per hour and per day** — when reached, confirmations pause and
+    the admin gets one warning per day (the form messages still arrive as usual)
+  - blocked domains, blocked keywords, optional MX check
+  - `Auto-Submitted: auto-replied` header (no auto-reply loops)
+- **Logs tab** — every sent / failed / blocked email with the reason (the visitor's name is not stored)
+- **Diagnostics tab** — send a test email and check the setup
+- Translations: English, German (de_DE), Persian (fa_IR)
 
 ---
 
 ## Installation
 
-### From the WordPress dashboard (recommended)
+1. Upload the `divi-contact-confirmation` folder to `/wp-content/plugins/` (or upload a ZIP of it under
+   **Plugins → Add New → Upload Plugin**) and activate it.
+2. **Settings → Divi Confirmation**: set subject, body and sender.
+3. In every Divi contact form module enable **Spam Protection** (reCAPTCHA via Divi's spam protection
+   service) and the **captcha**. Divi rejects bots before this plugin runs.
 
-1. Download `divi-contact-confirmation.zip`.
-2. Go to **Plugins → Add New → Upload Plugin**, select the ZIP, click **Install Now**, then **Activate**.
-3. Go to **Settings → Divi Confirmation** to configure.
-
-### Via FTP / File Manager
-
-1. Upload the `divi-contact-confirmation` folder to `/wp-content/plugins/`.
-2. Activate from **Plugins → Installed Plugins**.
-
-> **Upgrading from an earlier version?**  
-> Deactivate and re-activate the plugin. `dbDelta()` will safely create or upgrade the log table without touching existing data.
-
----
-
-## How it works — hook detection
-
-Divi processes contact forms over AJAX, which makes its internal action hooks unreliable for third-party plugins. This plugin uses **three layers** — the first successful match triggers the send, and a deduplication flag prevents duplicate emails:
-
-| Layer | Method | Description |
-|---|---|---|
-| 1 (primary) | `wp_mail` filter | Fires when Divi sends its admin notification. Reads the `Reply-To` header (Divi sets this to the submitter's email) and pulls all field values from `$_POST`. Works on every Divi version. |
-| 2 (fallback) | `et_pb_contact_form_submit` | Divi 4 named action hook. |
-| 3 (fallback) | `divi_contact_form_submitted` | Divi 5 named action hook. |
+**Updating from 1.x:** just replace the files. On the next page load the plugin removes `{name}`,
+`{email}` and field placeholders from your saved subject/body, adds the new limit options and deletes
+the old reCAPTCHA options.
 
 ---
 
@@ -65,137 +69,73 @@ Divi processes contact forms over AJAX, which makes its internal action hooks un
 
 | Field | Description |
 |---|---|
-| Email Subject | Subject line sent to the submitter |
-| Email Body | Plain-text body — supports placeholders (see below) |
-| From Name | Display name shown in the recipient's inbox |
-| From Email | Sending address (must be authorised by your mail server / SPF) |
-
-### Available placeholders
+| Email Subject | Subject line sent to the visitor |
+| Email Body | Plain-text body (safe placeholders only) |
+| From Name / From Email | Sender (must be allowed by your mail server / SPF) |
 
 | Placeholder | Replaced with |
 |---|---|
-| `{name}` | Submitter's name (falls back to email if not found) |
-| `{email}` | Submitter's email address |
 | `{site_name}` | Your site name |
 | `{site_url}` | Your site URL |
 | `{date}` | Submission date |
 | `{time}` | Submission time |
-| `{field_id}` | Any Divi form field — wrap its ID in braces |
+
+`{name}`, `{email}` and form-field placeholders were removed on purpose (see the advisory above).
 
 ### Security tab
 
-| Option | Description |
-|---|---|
-| Enable confirmation emails | Master on/off — disable without deactivating the plugin |
-| Rate limit (per IP / hour) | Max emails from the same IP per hour (0 = unlimited) |
-| Blocked email domains | Comma-separated domains to silently ignore (e.g. `tempmail.com`) |
-| Blocked keywords | Comma-separated — suppresses send if any field contains the word |
-| Require valid MX record | DNS check before sending (may be slow on some hosts) |
-| Log blocked attempts | Write a Blocked row to the log when a send is suppressed |
-| reCAPTCHA v3 — Site Key | Public key from [Google reCAPTCHA Admin Console](https://www.google.com/recaptcha/admin). Leave blank to disable. |
-| reCAPTCHA v3 — Secret Key | Secret key used for server-side verification. Never expose publicly. |
-| reCAPTCHA v3 — Minimum score | `0.0` = definitely a bot · `1.0` = definitely human. Recommended: `0.5`. |
-
-When both reCAPTCHA keys are saved the plugin automatically:
-1. Loads the invisible reCAPTCHA v3 script on every frontend page
-2. Attaches the token + a WordPress nonce to every Divi form AJAX submission (Divi 4 & 5)
-3. Verifies the token server-side; blocks submissions below the minimum score
-4. Rejects direct AJAX calls from bots that never loaded the page (nonce guard)
-
-### Logs tab
-
-- Shows all sent / failed / blocked emails, newest first, 25 per page
-- Status colours: **green** = Sent, **red** = Failed, **amber** = Blocked
-- "Clear all logs" button with confirmation dialog
-
-### Diagnostics tab
-
-- **Send test email** — triggers a real confirmation email to any address without needing a form submission. Confirms your SMTP/mail setup is working.
-- **System information** — plugin version, WordPress version, PHP version, active theme, Divi detection status, `wp_mail()` availability, current From email, plugin enabled state, log table existence, and `checkdnsrr()` availability.
-
----
-
-## Translations
-
-Language files live in the `languages/` directory. WordPress loads the correct one automatically based on **Settings → General → Site Language**.
-
-| Locale | Language | Status |
+| Option | Default | Description |
 |---|---|---|
-| `en` | English | Built-in (no file needed) |
-| `fa_IR` | Persian / فارسی | ✓ Included (59 strings) |
-| `de_DE` | German / Deutsch | ✓ Included (59 strings) |
+| Enable confirmation emails | on | Master switch |
+| Rate limit (per IP / hour) | 3 | Confirmations per IP and hour (0 = off) |
+| Total limit per hour | 10 | All visitors together; then pause + admin warning |
+| Total limit per day | 40 | All visitors together in 24 h |
+| Blocked email domains | — | Comma-separated, subdomains included |
+| Blocked keywords | — | Comma-separated, checked in all fields |
+| Require valid MX record | off | DNS check of the recipient domain |
+| Log blocked attempts | on | Write a "Blocked" log row with the reason |
+| Auto-delete blocked logs after (hours) | 24 | Sent entries are kept |
 
-To add a new language or update an existing one:
-1. Edit or create `languages/divi-contact-confirmation-{locale}.po`
-2. Run `python bin/compile-mo.py` to compile the `.mo` binary
-3. Upload both files to your server
+Always on (no setting): link / spam-text check, suspicious name, tagged address, own domain,
+one confirmation per address per 24 h.
 
 ---
 
 ## Developer hooks
 
+Since 2.0.0 the filters receive the recipient address only — no form fields, so custom code cannot
+put visitor text back into the email by accident.
+
 ```php
-// Modify the subject before sending
-add_filter( 'dcc_confirmation_subject', function( $subject, $email, $fields ) {
-    return 'Custom subject';
-}, 10, 3 );
+add_filter( 'dcc_confirmation_subject', function ( $subject, $email ) { return $subject; }, 10, 2 );
+add_filter( 'dcc_confirmation_body',    function ( $body, $email ) { return $body; }, 10, 2 );
+add_filter( 'dcc_confirmation_headers', function ( $headers, $email ) { return $headers; }, 10, 2 );
 
-// Modify the body before sending
-add_filter( 'dcc_confirmation_body', function( $body, $email, $fields ) {
-    return 'Custom body';
-}, 10, 3 );
-
-// Modify the mail headers
-add_filter( 'dcc_confirmation_headers', function( $headers, $email, $fields ) {
-    $headers[] = 'Bcc: archive@example.com';
-    return $headers;
-}, 10, 3 );
-
-// Veto sending programmatically (return false or a reason string to block)
-add_filter( 'dcc_should_send', function( $result, $email, $fields ) {
-    if ( /* your condition */ false ) {
-        return 'custom_block_reason';
-    }
-    return $result;
-}, 10, 3 );
+// Veto: return a reason string to block, true to allow.
+add_filter( 'dcc_should_send', function ( $result, $email ) { return $result; }, 10, 2 );
 ```
 
 ---
 
-## Frequently Asked Questions
+## FAQ
 
-**The email is not sending — what should I check?**
-1. Go to **Settings → Divi Confirmation → Diagnostics** and click **Send test email**.
-2. If the test also fails, WordPress itself cannot send mail — install **WP Mail SMTP** and connect it to a real mail provider (Gmail, Mailgun, SendGrid, etc.).
-3. If the test succeeds but real form submissions don't appear in the log, make sure the Divi form has an email field (the plugin scans all field values for a valid email address).
+**The email is not sending — what should I check?**  
+Diagnostics → *Send test email* (limits do not apply to the test). If it fails, WordPress cannot send
+mail — use WP Mail SMTP. If the test works but forms are not logged: the form needs an email field, and
+Divi must accept the form (captcha / spam protection passed).
 
-**Does this work with all Divi contact forms on the page?**  
-Yes. The hook fires for every Divi contact form submission site-wide.
-
-**Can I send an HTML email instead of plain text?**  
-Add this to your theme's `functions.php`:
-```php
-add_filter( 'dcc_confirmation_headers', function( $headers ) {
-    foreach ( $headers as $i => $h ) {
-        if ( str_starts_with( $h, 'Content-Type' ) ) {
-            $headers[ $i ] = 'Content-Type: text/html; charset=UTF-8';
-        }
-    }
-    return $headers;
-} );
-```
-Then write HTML directly in the Email Body field.
+**A real visitor did not get a confirmation.**  
+Check the Logs tab for the reason — e.g. the message contained a link (`www.…`), or the address already
+got a confirmation in the last 24 hours. The form message itself always reaches you.
 
 **Where is data stored?**  
-Options in `wp_options` (prefixed `dcc_`). Logs in the `wp_dcc_log` custom table. Everything is removed cleanly on uninstall.
+Options in `wp_options` (prefix `dcc_`), logs in `{prefix}dcc_log`. Everything is removed on uninstall.
 
 ---
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md).
-
----
+See [CHANGELOG.md](divi-contact-confirmation/CHANGELOG.md).
 
 ## Credits
 

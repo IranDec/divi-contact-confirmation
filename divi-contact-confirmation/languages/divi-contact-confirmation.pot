@@ -31,7 +31,7 @@ msgstr ""
 msgid "We received your message!"
 msgstr ""
 
-msgid "Hello {name},\n\nThank you for contacting us. We have received your message and will get back to you as soon as possible.\n\nBest regards,\n{site_name}"
+msgid "Hello,\n\nThank you for contacting us. We have received your message and will get back to you as soon as possible.\n\nBest regards,\n{site_name}"
 msgstr ""
 
 # ── Admin menu ───────────────────────────────────────────────────────────────
@@ -214,4 +214,55 @@ msgstr ""
 
 #. translators: 1: plugin version number, 2: HTML link to author website
 msgid "Version %1$s &mdash; Developed by %2$s"
+msgstr ""
+
+msgid "Placeholders: {site_name}, {site_url}, {date}, {time}. For security the email never contains text the visitor typed - other placeholders are removed."
+msgstr ""
+
+msgid "Total limit per hour"
+msgstr ""
+
+msgid "Maximum confirmation emails per hour in total (all visitors). When reached, confirmations pause and the admin is warned once a day. Each address gets at most one confirmation per 24 hours anyway."
+msgstr ""
+
+msgid "Total limit per day"
+msgstr ""
+
+msgid "Maximum confirmation emails per 24 hours in total."
+msgstr ""
+
+msgid "Why no {name} or form fields? Bots enter a victim's address and put scam text or links into the name / message field. If the confirmation repeated that text, your site would send their scam. Since 2.0.0 the confirmation is always the same neutral text."
+msgstr ""
+
+msgid "Bot protection"
+msgstr ""
+
+msgid "Divi contact form: enable \"Spam Protection\" (reCAPTCHA) and the captcha in the module"
+msgstr ""
+
+msgid "Contact form confirmations paused"
+msgstr ""
+
+msgid "Unusually many contact forms were submitted, so confirmation emails to visitors are paused (limit: %1$d per hour / %2$d per day).\n\nThe form messages themselves still reach you as usual. Details: Settings > Contact Confirmation > Logs."
+msgstr ""
+
+msgid "No valid email address"
+msgstr ""
+
+msgid "Address of this site"
+msgstr ""
+
+msgid "Spam: address tagged with the site name"
+msgstr ""
+
+msgid "Spam: link or spam text in the form"
+msgstr ""
+
+msgid "Spam: suspicious name"
+msgstr ""
+
+msgid "Address already confirmed in the last 24 hours"
+msgstr ""
+
+msgid "Total limit reached - confirmations paused"
 msgstr ""
